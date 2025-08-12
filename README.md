@@ -7,3 +7,12 @@
 AIRFLOW_UID=
 
 ```
+
+### Run
+
+```bash
+docker-compose up airflow-init
+docker-compose up -d
+
+
+```

@@ -55,3 +55,7 @@ airflow-triggerer.pid
 
 # Logs
 *.log
+# Scraped data
+scraped_data/
+.scraped_data/
+/scraped_data/*

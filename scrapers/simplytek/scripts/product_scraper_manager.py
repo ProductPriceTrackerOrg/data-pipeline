@@ -19,14 +19,16 @@ from config.scraper_config import OUTPUT_DIR, OUTPUT_FILE, BACKUP_OUTPUT, LOGGIN
 class ScrapingManager:
     """High-level scraping manager"""
     
-    def __init__(self, output_dir: str = OUTPUT_DIR, output_file: str = OUTPUT_FILE):
+    def __init__(self, output_dir: str = OUTPUT_DIR, output_file: str = OUTPUT_FILE, save_locally: bool = False):
         self.output_dir = output_dir
         self.output_file = output_file
         self.output_path = os.path.join(output_dir, output_file)
+        self.save_locally = save_locally  # Flag to control local file saving
         self.logger = logging.getLogger(__name__)
         
-        # Ensure output directory exists
-        ensure_output_directory(output_dir)
+        # Ensure output directory exists if saving locally
+        if self.save_locally:
+            ensure_output_directory(output_dir)
     
     async def run_full_scraping(self) -> ScrapingResult:
         """
@@ -39,16 +41,17 @@ class ScrapingManager:
         start_time = datetime.now()
         
         try:
-            # Create backup of existing data if it exists
-            if BACKUP_OUTPUT and os.path.exists(self.output_path):
+            # Create backup of existing data if it exists and we're saving locally
+            if self.save_locally and BACKUP_OUTPUT and os.path.exists(self.output_path):
                 await self._create_backup()
             
             # Initialize scraper and run scraping
             scraper = ProductScraper()
             result = await scraper.scrape_all_products()
             
-            # Save results
-            await self._save_results(result)
+            # Save results only if save_locally is True
+            if self.save_locally:
+                await self._save_results(result)
             
             # Log summary
             end_time = datetime.now()
@@ -192,6 +195,11 @@ class ScrapingManager:
     
     async def _save_results(self, result: ScrapingResult, custom_path: Optional[str] = None) -> None:
         """Save scraping results to file (products only)"""
+        # Skip if save_locally is False (unless this is a custom path request)
+        if not self.save_locally and custom_path is None:
+            self.logger.info("Local file saving is disabled, skipping file write")
+            return
+            
         output_path = custom_path or self.output_path
         
         try:

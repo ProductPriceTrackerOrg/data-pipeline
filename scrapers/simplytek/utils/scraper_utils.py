@@ -35,12 +35,21 @@ class ScrapingSession:
             limit_per_host=MAX_CONCURRENT_REQUESTS,
             ttl_dns_cache=300,
             use_dns_cache=True,
+            force_close=False,
+            enable_cleanup_closed=True,
         )
         
         timeout = aiohttp.ClientTimeout(total=TIMEOUT)
         
+        # Ensure we set headers with proper compression support
+        headers = DEFAULT_HEADERS.copy()
+        if "Accept-Encoding" in headers:
+            # Make sure it includes gzip even if brotli fails
+            if "br" in headers["Accept-Encoding"] and "gzip" not in headers["Accept-Encoding"]:
+                headers["Accept-Encoding"] = "gzip, deflate, br"
+        
         self.session = aiohttp.ClientSession(
-            headers=DEFAULT_HEADERS,
+            headers=headers,
             connector=connector,
             timeout=timeout
         )

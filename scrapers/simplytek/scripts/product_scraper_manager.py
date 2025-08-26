@@ -364,6 +364,15 @@ def setup_scraping_environment():
     # Create output directory
     ensure_output_directory(OUTPUT_DIR)
     
+    # Check for Brotli support - website uses brotli compression
+    logger = logging.getLogger(__name__)
+    try:
+        import brotli
+        logger.info("Brotli compression support detected")
+    except ImportError:
+        logger.warning("Brotli compression support not found. Install with 'pip install brotli'")
+        logger.warning("This may cause failures when scraping compressed responses")
+    
     logging.info("Scraping environment initialized")
 
 

@@ -91,7 +91,7 @@ async def main():
         manager = ScrapingManager(save_locally=False)
         
         # Run full scraping
-        print("\n🔍 Scraping all products from SimplyTek...")
+        print("\n Scraping all products from SimplyTek...")
         result = await manager.run_full_scraping()
         
         # Display results

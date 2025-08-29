@@ -23,6 +23,17 @@ This folder contains the Data Warehouse table definitions for the analytical lay
 	  ```sh
 	  bq query --use_legacy_sql=false < DimShop.sql
 	  ```
+    1. Authenticate with Google Cloud:
+        gcloud auth login
+
+    2. Set your project:
+        gcloud config set project your_project_id
+
+    3. Make the script executable:
+        chmod +x deploy_schemas.sh
+
+    4. Run the deployment script:
+        ./deploy_schemas.sh
 
 3. **Version Control**
 	- All schema changes are tracked in Git.

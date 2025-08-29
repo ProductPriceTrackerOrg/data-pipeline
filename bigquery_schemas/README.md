@@ -15,25 +15,22 @@ This folder contains the Data Warehouse table definitions for the analytical lay
 	- Use BigQuery-compatible data types (`STRING`, `INT64`, `FLOAT64`, `BOOL`, `DATE`, `TIMESTAMP`).
 
 2. **Deploy Schemas**
-	- Use the `deploy_schemas.sh` script to create all tables in your BigQuery dataset:
-	  ```sh
-	  ./deploy_schemas.sh
-	  ```
-	- Or run individual files using the BigQuery CLI:
-	  ```sh
-	  bq query --use_legacy_sql=false < DimShop.sql
-	  ```
-    1. Authenticate with Google Cloud:
-        gcloud auth login
-
-    2. Set your project:
-        gcloud config set project your_project_id
-
-    3. Make the script executable:
-        chmod +x deploy_schemas.sh
-
-    4. Run the deployment script:
-        ./deploy_schemas.sh
+		- Authenticate with Google Cloud:
+			```bash
+			gcloud auth login
+			```
+		- Set your project:
+			```bash
+			gcloud config set project price-pulse-470211
+			```
+		- Run the deployment script using Bash or Git Bash:
+			```bash
+			bash bigquery_schemas/deploy_schemas.sh
+			```
+		- Or run individual files using the BigQuery CLI:
+			```bash
+			bq query --use_legacy_sql=false < bigquery_schemas/DimShop.sql
+			```
 
 3. **Version Control**
 	- All schema changes are tracked in Git.

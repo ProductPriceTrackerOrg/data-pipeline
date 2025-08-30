@@ -4,9 +4,9 @@ High-performance complete scraper optimized for maximum speed
 import asyncio
 import time
 from datetime import datetime
-from scrapers.appleme.scripts.main import AppleMeScraper
-from scrapers.appleme.utils.scraper_utils import AsyncRequestManager
-from scrapers.appleme.models.product_models import ScrapingResultModel
+from scripts.main import AppleMeScraper
+from utils.scraper_utils import AsyncRequestManager
+from models.product_models import ScrapingResultModel
 
 
 class HighPerformanceScraper(AppleMeScraper):
@@ -87,7 +87,7 @@ class HighPerformanceScraper(AppleMeScraper):
     
     async def _turbo_scrape_products(self, request_manager, products_info):
         """Ultra-fast product scraping with dynamic optimization"""
-        from scrapers.appleme.scripts.product_scraper import ProductBatchScraper
+        from scripts.product_scraper import ProductBatchScraper
         
         # Use optimized batch scraper
         turbo_scraper = ProductBatchScraper()

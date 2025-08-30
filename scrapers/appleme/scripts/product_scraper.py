@@ -14,9 +14,9 @@ import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
 
-from scrapers.appleme.models.product_models import ProductModel, VariantModel, MetadataModel
-from scrapers.appleme.config.scraper_config import ScraperConfig, SelectorConfig
-from scrapers.appleme.utils.scraper_utils import AsyncRequestManager, ScraperUtils
+from models.product_models import ProductModel, VariantModel, MetadataModel
+from config.scraper_config import ScraperConfig, SelectorConfig
+from utils.scraper_utils import AsyncRequestManager, ScraperUtils
 
 
 class ProductScraper:

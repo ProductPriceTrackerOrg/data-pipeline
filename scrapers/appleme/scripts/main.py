@@ -6,11 +6,11 @@ import asyncio
 from datetime import datetime
 from typing import List, Dict, Any
 
-from scrapers.appleme.models.product_models import ScrapingResultModel
-from scrapers.appleme.config.scraper_config import ScraperConfig
-from scrapers.appleme.utils.scraper_utils import AsyncRequestManager, ScraperUtils
-from scrapers.appleme.scripts.category_scraper import CategoryScraper
-from scrapers.appleme.scripts.product_scraper import ProductBatchScraper
+from models.product_models import ScrapingResultModel
+from config.scraper_config import ScraperConfig
+from utils.scraper_utils import AsyncRequestManager, ScraperUtils
+from scripts.category_scraper import CategoryScraper
+from scripts.product_scraper import ProductBatchScraper
 
 
 class AppleMeScraper:

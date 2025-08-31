@@ -249,12 +249,15 @@ class ProductScraper:
             if original_price != "0.00":
                 return original_price
         
-        # Look for struck-through prices
-        del_elements = soup.select("del .woocommerce-Price-amount")
+        # Look for struck-through prices - primary method
+        # First try using the del tag directly
+        del_elements = soup.select("del")
         for del_elem in del_elements:
-            original_price = self.utils.extract_price(del_elem.get_text())
-            if original_price != "0.00":
-                return original_price
+            price_element = del_elem.select_one(".woocommerce-Price-amount")
+            if price_element:
+                original_price = self.utils.extract_price(price_element.get_text())
+                if original_price != "0.00":
+                    return original_price
         
         return None
     

@@ -242,22 +242,39 @@ class ProductScraper:
     
     def _extract_original_price(self, soup) -> Optional[str]:
         """Extract original price if product is discounted"""
-        # Look for discounted price elements
-        discounted_element = soup.select_one("div.discounted-price")
-        if discounted_element:
-            original_price = self.utils.extract_price(discounted_element.get_text())
-            if original_price != "0.00":
-                return original_price
         
-        # Look for struck-through prices - primary method
-        # First try using the del tag directly
-        del_elements = soup.select("del")
-        for del_elem in del_elements:
-            price_element = del_elem.select_one(".woocommerce-Price-amount")
-            if price_element:
-                original_price = self.utils.extract_price(price_element.get_text())
+        # Method 1: Look for the standard price structure with del tag within electro-price
+        price_container = soup.select_one("p.price .electro-price")
+        if price_container:
+            del_element = price_container.select_one("del .woocommerce-Price-amount")
+            if del_element:
+                original_price = self.utils.extract_price(del_element.get_text())
                 if original_price != "0.00":
                     return original_price
+        
+        # # Method 2: Look for any del tags specifically in the price section
+        # price_section = soup.select_one("p.price")
+        # if price_section:
+        #     del_elements = price_section.select("del")
+        #     for del_elem in del_elements:
+        #         price_element = del_elem.select_one(".woocommerce-Price-amount")
+        #         if price_element:
+        #             original_price = self.utils.extract_price(price_element.get_text())
+        #             if original_price != "0.00":
+        #                 return original_price
+        
+        # # Method 3: Only as a last resort, look for any del tags on the page
+        # del_elements = soup.select("del")
+        # for del_elem in del_elements:
+        #     # Make sure we're in a price context (looking for price amount class)
+        #     price_element = del_elem.select_one(".woocommerce-Price-amount")
+        #     if price_element:
+        #         # Extra check - parent should contain "price" in class name
+        #         parent = del_elem.parent
+        #         if parent and parent.has_attr('class') and any('price' in cls.lower() for cls in parent['class']):
+        #             original_price = self.utils.extract_price(price_element.get_text())
+        #             if original_price != "0.00":
+        #                 return original_price
         
         return None
     

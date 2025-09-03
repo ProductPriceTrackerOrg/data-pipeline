@@ -22,11 +22,11 @@ with DAG(
         bash_command="echo 'Starting data ingestion pipeline...'"
     )
 
-    # # Task to run the AppleMe scraper
-    # scrape_appleme_task = BashOperator(
-    #     task_id="scrape_appleme",
-    #     bash_command="cd /opt/airflow && python -c 'import sys; sys.path.append(\"/opt/airflow\"); import asyncio; from scrapers.appleme.run_complete_scrape import run_complete_scrape; asyncio.run(run_complete_scrape())'",
-    # )
+    # Task to run the AppleMe scraper
+    scrape_appleme_task = BashOperator(
+        task_id="scrape_appleme",
+        bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
+    )
 
     # Task to run the SimplyTek scraper
     scrape_simplytek_task = BashOperator(
@@ -41,5 +41,5 @@ with DAG(
     )
 
     # Set the dependencies
-    # start_task >> [scrape_appleme_task, scrape_simplytek_task] >> end_task
-    start_task >> scrape_simplytek_task >> end_task
+    start_task >> [scrape_appleme_task, scrape_simplytek_task] >> end_task
+    # start_task >> scrape_simplytek_task >> end_task

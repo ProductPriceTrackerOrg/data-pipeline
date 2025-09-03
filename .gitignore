@@ -60,4 +60,5 @@ scraped_data/
 .scraped_data/
 /scraped_data/*
 scrapers/appleme/scraped_data/
-
+scrapers/appleme/scraped_data/
+scrapers/appleme/scraped_data/appleme_products.json

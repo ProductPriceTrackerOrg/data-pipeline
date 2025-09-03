@@ -3,7 +3,7 @@ Run a complete scrape with progress monitoring
 """
 import asyncio
 from datetime import datetime
-from scrapers.appleme.scripts.main import AppleMeScraper
+from scripts.main import AppleMeScraper
 
 
 async def run_complete_scrape():

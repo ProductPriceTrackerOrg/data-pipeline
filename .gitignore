@@ -59,12 +59,9 @@ airflow-triggerer.pid
 scraped_data/
 .scraped_data/
 /scraped_data/*
+scrapers/appleme/scraped_data/
+scrapers/appleme/scraped_data/
+scrapers/appleme/scraped_data/appleme_products.json
 
-.scrapy/
-*.pyc
-__pycache__/
-*.log
-*.egg-info/
-*.egg
-dist/
-build/
+
+

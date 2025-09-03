@@ -6,11 +6,11 @@ import asyncio
 from datetime import datetime
 from typing import List, Dict, Any
 
-from scrapers.appleme.models.product_models import ScrapingResultModel
-from scrapers.appleme.config.scraper_config import ScraperConfig
-from scrapers.appleme.utils.scraper_utils import AsyncRequestManager, ScraperUtils
-from scrapers.appleme.scripts.category_scraper import CategoryScraper
-from scrapers.appleme.scripts.product_scraper import ProductBatchScraper
+from models.product_models import ScrapingResultModel
+from config.scraper_config import ScraperConfig
+from utils.scraper_utils import AsyncRequestManager, ScraperUtils
+from scripts.category_scraper import CategoryScraper
+from scripts.product_scraper import ProductBatchScraper
 
 
 class AppleMeScraper:
@@ -138,20 +138,16 @@ class AppleMeScraper:
         """Save scraping results to files"""
         self.logger.info("Saving results...")
         
-        # Save main products file
+        # Save main products file - only the products array without the scrape_info metadata
         products_file = os.path.join(ScraperConfig.OUTPUT_DIR, ScraperConfig.PRODUCTS_FILE)
-        products_data = {
-            'scrape_info': {
-                'total_products': result.total_products,
-                'successful_scrapes': result.successful_scrapes,
-                'failed_scrapes': result.failed_scrapes,
-                'categories_processed': result.categories_processed,
-                'start_time': result.start_time.isoformat(),
-                'end_time': result.end_time.isoformat(),
-                'duration': str(result.end_time - result.start_time)
-            },
-            'products': [product.dict() for product in result.products]
-        }
+        products_data = [product.dict() for product in result.products]
+        
+        # Log scrape info to console but don't include in the JSON file
+        self.logger.info(f"Scrape Info: {result.total_products} total products, "
+                      f"{result.successful_scrapes} successful, "
+                      f"{result.failed_scrapes} failed, "
+                      f"{result.categories_processed} categories processed, "
+                      f"Duration: {str(result.end_time - result.start_time)}")
         
         if self.utils.save_json(products_data, products_file):
             self.logger.info(f"Products saved to {products_file}")

@@ -6,8 +6,8 @@ import re
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urljoin, urlparse, parse_qs
 
-from scrapers.appleme.config.scraper_config import ScraperConfig, SelectorConfig
-from scrapers.appleme.utils.scraper_utils import AsyncRequestManager, ScraperUtils
+from config.scraper_config import ScraperConfig, SelectorConfig
+from utils.scraper_utils import AsyncRequestManager, ScraperUtils
 
 
 class CategoryScraper:

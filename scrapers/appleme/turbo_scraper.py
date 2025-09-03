@@ -1,12 +1,25 @@
 """
 High-performance complete scraper optimized for maximum speed
+With Azure Data Lake Storage (ADLS) integration
 """
 import asyncio
 import time
+import os
+import json
+import logging
+from typing import Dict, List
 from datetime import datetime
-from scrapers.appleme.scripts.main import AppleMeScraper
-from scrapers.appleme.utils.scraper_utils import AsyncRequestManager
-from scrapers.appleme.models.product_models import ScrapingResultModel
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Azure Storage imports
+from azure.storage.blob import BlobServiceClient
+
+from scripts.main import AppleMeScraper
+from utils.scraper_utils import AsyncRequestManager
+from models.product_models import ScrapingResultModel
 
 
 class HighPerformanceScraper(AppleMeScraper):
@@ -87,7 +100,7 @@ class HighPerformanceScraper(AppleMeScraper):
     
     async def _turbo_scrape_products(self, request_manager, products_info):
         """Ultra-fast product scraping with dynamic optimization"""
-        from scrapers.appleme.scripts.product_scraper import ProductBatchScraper
+        from scripts.product_scraper import ProductBatchScraper
         
         # Use optimized batch scraper
         turbo_scraper = ProductBatchScraper()
@@ -101,6 +114,53 @@ class HighPerformanceScraper(AppleMeScraper):
         )
         
         return successful_products
+        
+    async def _save_results(self, result: ScrapingResultModel, 
+                           category_products: Dict, all_products_info: List):
+        """
+        Save scraping results to files and Azure Data Lake Storage
+        Overrides the parent class method to include ADLS upload
+        """
+        self.logger.info("Saving results...")
+        
+        # First, save to local file as implemented in the parent class
+        await super()._save_results(result, category_products, all_products_info)
+        
+        # Now, also upload to Azure Data Lake Storage
+        try:
+            self.logger.info("Preparing to upload data to Azure Data Lake Storage...")
+            
+            # Use Pydantic's built-in JSON serialization to handle datetime objects properly
+            # Support both Pydantic v1 and v2 APIs
+            try:
+                # Try Pydantic v2 API first
+                json_data = json.dumps([product.model_dump(mode='json') for product in result.products], indent=2)
+            except AttributeError:
+                self.logger.info("Using Pydantic v1 API (dict method) for serialization")
+                # Fall back to Pydantic v1 API if model_dump is not available
+                try:
+                    json_data = json.dumps([product.dict() for product in result.products], indent=2)
+                except Exception as e:
+                    self.logger.error(f"Failed to serialize with dict(): {e}")
+                    # Try a custom serialization approach as last resort
+                    def datetime_handler(x):
+                        if isinstance(x, datetime):
+                            return x.isoformat()
+                        raise TypeError(f"Object of type {type(x)} is not JSON serializable")
+                    
+                    json_data = json.dumps([product.dict() for product in result.products], 
+                                         default=datetime_handler, indent=2)
+            
+            # Upload to ADLS
+            success = self.upload_to_adls(json_data=json_data, source_website="appleme")
+            
+            if success:
+                self.logger.info("Successfully uploaded data to Azure Data Lake Storage")
+            else:
+                self.logger.warning("Failed to upload data to Azure Data Lake Storage")
+                
+        except Exception as e:
+            self.logger.error(f"Error uploading to ADLS: {e}", exc_info=True)
     
     def _setup_performance_monitoring(self):
         """Setup real-time performance monitoring"""
@@ -114,12 +174,47 @@ class HighPerformanceScraper(AppleMeScraper):
         
         # Start background monitoring
         asyncio.create_task(monitor_progress())
+        
+    def upload_to_adls(self, json_data: str, source_website: str = "appleme"):
+        """
+        Uploads a JSON string to Azure Data Lake Storage (ADLS) as a JSON file.
+        
+        Args:
+            json_data: Ready-to-upload JSON string with properly serialized data
+            source_website: Name of the source website (used for partitioning)
+        """
+        # --- 1. Get Azure Connection String from Environment Variable ---
+        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        if not connection_string:
+            self.logger.error("Azure connection string not found in environment variables.")
+            return False
+
+        # --- 2. Define the partitioned path ---
+        scrape_date = datetime.now().strftime('%Y-%m-%d')
+        file_path = f"source_website={source_website}/scrape_date={scrape_date}/data.json"
+        container_name = "raw-data"
+
+        try:
+            # --- 3. Connect to Azure and Upload ---
+            self.logger.info(f"Uploading data to ADLS: {container_name}/{file_path}")
+            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+            blob_client = blob_service_client.get_blob_client(container=container_name, blob=file_path)
+            
+            # Upload the already prepared JSON string
+            blob_client.upload_blob(json_data, overwrite=True)
+
+            self.logger.info("Upload to ADLS successful!")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"ADLS upload error: {e}", exc_info=True)
+            return False
 
 
 async def run_turbo_complete_scrape():
     """Run the turbo-optimized complete scrape"""
     print("=" * 70)
-    print("AppleMe.lk TURBO SCRAPER")
+    print("AppleMe.lk TURBO SCRAPER WITH ADLS INTEGRATION")
     print("=" * 70)
     print("Performance Optimizations:")
     print("   • 15 concurrent requests (up from 8)")
@@ -128,6 +223,7 @@ async def run_turbo_complete_scrape():
     print("   • Adaptive concurrency (up to 20 during high success)")
     print("   • Optimized HTTP connection pooling")
     print("   • Real-time performance adjustments")
+    print("   • Azure Data Lake Storage (ADLS) integration")
     print()
     print("Expected Performance:")
     print("   • Target: 5-7 minutes for ~2,300 products")
@@ -155,6 +251,7 @@ async def run_turbo_complete_scrape():
         print(f"Products Scraped: {result.successful_scrapes:,}/{result.total_products:,}")
         print(f"Categories: {result.categories_processed}")
         print(f"Saved to: scraped_data/appleme_products.json")
+        print(f"Uploaded to: ADLS raw-data/source_website=appleme/scrape_date={datetime.now().strftime('%Y-%m-%d')}/data.json")
         
         if products_per_minute > 300:
             print("EXCELLENT PERFORMANCE! You're in the top speed tier!")

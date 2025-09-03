@@ -146,6 +146,26 @@ def load_scraped_products(json_path="one1lk_products.json"):
         # First try normal JSON loading
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        # Validate the data structure
+        print(f"📊 Loaded data type: {type(data)}")
+        if isinstance(data, list) and data:
+            print(f"📊 First item type: {type(data[0])}")
+            # Check if we have string items that need parsing
+            if isinstance(data[0], str):
+                print("🔧 Converting string items to objects...")
+                parsed_data = []
+                for item in data:
+                    if isinstance(item, str) and item.strip().startswith("{"):
+                        try:
+                            parsed_data.append(json.loads(item))
+                        except json.JSONDecodeError:
+                            print(f"⚠️  Skipping malformed item: {item[:50]}...")
+                    else:
+                        parsed_data.append(item)
+                data = parsed_data
+                print(f"✅ Converted {len(data)} items")
+
         return data
     except json.JSONDecodeError as e:
         print(f"❌ JSON parsing error: {e}")
@@ -178,23 +198,87 @@ def main():
             handlers=[logging.FileHandler("onei_scraper.log"), logging.StreamHandler()],
         )
 
-        # Run scraping using the existing scraper
-        print("\n🕷️  Scraping all products from Onei.lk...")
-        run_scraper()
+        # Skip scraping and directly upload existing data
+        print("\n� Uploading existing data to Azure Data Lake Storage...")
+        print("ℹ️  Skipping scraping step as requested")
 
-        # Load scraped products
-        print("📂 Loading scraped data...")
-        products_data = load_scraped_products("one1lk_products.json")
+        # Load scraped products (using the high-quality data file)
+        print("📂 Loading scraped data from high-quality file...")
+        products_data = load_scraped_products("one1lk_products_fixed_titles.json")
 
         if not products_data:
             print("❌ No valid products found in scraped data")
             return 1
 
-        # Calculate totals
+        # Debug: Check the type of data we received
+        print(f"📊 Data type check: {type(products_data)}")
+        if products_data:
+            print(f"📊 First item type: {type(products_data[0])}")
+            if isinstance(products_data[0], str):
+                print(f"📊 First item preview: {products_data[0][:100]}...")
+
+        # Ensure we have proper dictionary objects
+        if isinstance(products_data, list) and products_data:
+            if isinstance(products_data[0], str):
+                print(
+                    "🔧 Data contains strings instead of objects, attempting to parse..."
+                )
+                # If data contains JSON strings, parse them
+                try:
+                    parsed_products = []
+                    for item in products_data:
+                        if isinstance(item, str):
+                            parsed_products.append(json.loads(item))
+                        else:
+                            parsed_products.append(item)
+                    products_data = parsed_products
+                    print(f"✅ Successfully parsed {len(products_data)} products")
+                except json.JSONDecodeError as e:
+                    print(f"❌ Failed to parse string data: {e}")
+                    print("❌ Data quality check failed - skipping Azure upload")
+                    print("📋 Summary of issues:")
+                    print("   - Data contains unparseable string objects")
+                    print("   - Cannot upload malformed data to production ADLS")
+                    print(
+                        "💡 Recommendation: Fix the scraper to produce proper JSON objects"
+                    )
+                    return 1
+
+        # Validate data quality before proceeding
+        data_quality_ok = True
+        dict_count = 0
+        str_count = 0
+
+        for product in products_data:
+            if isinstance(product, dict):
+                dict_count += 1
+            elif isinstance(product, str):
+                str_count += 1
+                data_quality_ok = False
+
+        print(f"📊 Data Quality Check:")
+        print(f"   Dictionary objects: {dict_count}")
+        print(f"   String objects: {str_count}")
+
+        if not data_quality_ok:
+            print("❌ Data quality check failed - contains string objects")
+            print("❌ Skipping Azure upload to prevent corrupted data in ADLS")
+            print("💡 Please fix the data format before uploading")
+            return 1
+
+        print("✅ Data quality check passed - all objects are properly formatted")
+
+        # Calculate totals safely
         total_products = len(products_data)
-        total_variants = sum(
-            len(product.get("variants", [])) for product in products_data
-        )
+        total_variants = 0
+
+        for product in products_data:
+            if isinstance(product, dict):
+                variants = product.get("variants", [])
+                if isinstance(variants, list):
+                    total_variants += len(variants)
+            else:
+                print(f"⚠️  Warning: Product is not a dictionary: {type(product)}")
 
         # Display results
         print(f"\n{'='*60}")

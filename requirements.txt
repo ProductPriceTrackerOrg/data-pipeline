@@ -144,3 +144,8 @@ wrapt==1.17.3
 yarl==1.20.1
 zipp==3.23.0
 zope.interface==7.2
+
+# Additional packages for scrapers
+nest-asyncio==1.5.6
+# Use an older version of selectolax that has pre-compiled wheels
+selectolax==0.3.17

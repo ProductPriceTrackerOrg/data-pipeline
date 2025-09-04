@@ -34,6 +34,12 @@ with DAG(
         bash_command="cd /opt/airflow/scrapers/simplytek && python -u main.py",
     )
 
+    # Task to run the CyberDeals scraper
+    scrape_cyberdeals_task = BashOperator(
+        task_id="scrape_cyberdeals",
+        bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
+    )
+
     # Dummy end task for better visualization
     end_task = BashOperator(
         task_id="end", 
@@ -41,5 +47,5 @@ with DAG(
     )
 
     # Set the dependencies
-    # start_task >> [scrape_appleme_task, scrape_simplytek_task] >> end_task
-    start_task >> scrape_simplytek_task >> end_task
+    # start_task >> [scrape_appleme_task, scrape_simplytek_task, scrape_cyberdeals_task] >> end_task
+    start_task >> [scrape_simplytek_task, scrape_cyberdeals_task] >> end_task

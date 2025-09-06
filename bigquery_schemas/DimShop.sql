@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS `price-pulse-470211.warehouse.DimShop` (
   shop_id INT64 NOT NULL,                -- Surrogate key for the shop
   shop_name STRING NOT NULL,             -- Unique name of the shop (e.g., 'nanotek.lk')
-  website_url STRING ,                    -- Shop website URL
+  website_url STRING,                    -- Shop website URL
   contact_phone STRING,                  -- Shop contact phone number
   contact_whatsapp STRING                -- Shop WhatsApp contact
 )

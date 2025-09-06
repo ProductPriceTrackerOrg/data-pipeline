@@ -1,0 +1,28 @@
+=== Checking staging data for 2025-09-06 ===
+Traceback (most recent call last):
+  File "D:\Semester 5\DSE Project\data-pipeline\debug_variant_count.py", line 89, in <module>
+    main()
+  File "D:\Semester 5\DSE Project\data-pipeline\debug_variant_count.py", line 23, in main
+    result = list(client.query(query).result())
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\yugan\AppData\Local\Programs\Python\Python312\Lib\site-packages\google\cloud\bigquery\job\query.py", line 1706, in result
+    while not is_job_done():
+              ^^^^^^^^^^^^^
+  File "C:\Users\yugan\AppData\Local\Programs\Python\Python312\Lib\site-packages\google\api_core\retry\retry_unary.py", line 294, in retry_wrapped_func
+    return retry_target(
+           ^^^^^^^^^^^^^
+  File "C:\Users\yugan\AppData\Local\Programs\Python\Python312\Lib\site-packages\google\api_core\retry\retry_unary.py", line 156, in retry_target
+    next_sleep = _retry_error_helper(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\yugan\AppData\Local\Programs\Python\Python312\Lib\site-packages\google\api_core\retry\retry_base.py", line 214, in _retry_error_helper
+    raise final_exc from source_exc
+  File "C:\Users\yugan\AppData\Local\Programs\Python\Python312\Lib\site-packages\google\api_core\retry\retry_unary.py", line 147, in retry_target
+    result = target()
+             ^^^^^^^^
+  File "C:\Users\yugan\AppData\Local\Programs\Python\Python312\Lib\site-packages\google\cloud\bigquery\job\query.py", line 1655, in is_job_done
+    raise job_failed_exception
+google.api_core.exceptions.NotFound: 404 Not found: Table price-pulse-470211:staging.appleme_staging was not found in location US; reason: notFound, message: Not found: Table price-pulse-470211:staging.appleme_staging was not found in location US
+
+Location: US
+Job ID: 0dfdb34d-4081-4b11-93f9-a4cf69fce4a3
+

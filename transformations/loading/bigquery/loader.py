@@ -425,37 +425,40 @@ class BigQueryLoader:
             return {'source': source, 'error': str(e)}
 
 def main():
-    """Test the BigQuery loader with direct ADLS loading"""
-    logger.info("🧪 Testing BigQuery Loader with ADLS Integration")
+    """Load data from ADLS to BigQuery staging for the current date"""
+    logger.info("🧪 Loading BigQuery Staging with Current Day's Data")
     
     # Initialize loader
     loader = BigQueryLoader()
     
-    # Test sources and date (matching our successful extraction)
+    # Sources to load
     test_sources = ["appleme", "simplytek", "onei.lk"]
-    test_date = "2025-09-03"
     
-    logger.info(f"🎯 Testing direct ADLS → BigQuery loading for {test_date}")
+    # Use current date (today) instead of hardcoded date
+    from datetime import date
+    current_date = date.today().strftime("%Y-%m-%d")
+    
+    logger.info(f"🎯 Loading data scraped TODAY: {current_date}")
     
     # Load data from ADLS to BigQuery
-    results = loader.load_multiple_sources_from_adls(test_sources, test_date)
+    results = loader.load_multiple_sources_from_adls(test_sources, current_date)
     
     # Validate each load
     for source in test_sources:
         if results.get(source, 0) > 0:
             logger.info(f"🔍 Validating {source}...")
-            validation = loader.validate_load(source, test_date)
+            validation = loader.validate_load(source, current_date)
             
             # Get sample products
-            samples = loader.get_sample_products(source, test_date, limit=3)
+            samples = loader.get_sample_products(source, current_date, limit=3)
             if samples:
                 logger.info(f"📝 Sample products from {source}:")
                 for sample in samples:
                     logger.info(f"   • {sample['title']} ({sample['brand']})")
         else:
-            logger.warning(f"⚠️ No data loaded for {source}")
+            logger.warning(f"⚠️ No data found for {source} on {current_date}")
     
-    logger.info("🎉 BigQuery loading test completed!")
+    logger.info("🎉 Current day's data loading completed!")
 
 if __name__ == "__main__":
     main()

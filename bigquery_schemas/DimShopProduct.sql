@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS `price-pulse-470211.warehouse.DimShopProduct` (
   brand_native STRING,                      -- Brand name as it appears on shop
   description_native STRING,                -- Product description from shop
   product_url STRING,                       -- URL to the product page (max 1024 chars)
-  scraped_timestamp TIMESTAMP,              -- When this product was first scraped
+  scraped_date DATE,                        -- Date when this product was first scraped
   predicted_master_category_id INT64        -- ML-predicted category (references DimCategory)
 )
 OPTIONS(

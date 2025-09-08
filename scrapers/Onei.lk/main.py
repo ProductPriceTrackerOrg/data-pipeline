@@ -51,14 +51,14 @@ def clean_existing_data():
             try:
                 os.remove(file_path)
                 cleaned_count += 1
-                print(f"🗑️  Removed: {file_path}")
+                print(f"Removed: {file_path}")
             except Exception as e:
-                print(f"⚠️  Could not remove {file_path}: {e}")
+                print(f"Could not remove {file_path}: {e}")
 
     if cleaned_count > 0:
-        print(f"✅ Cleaned {cleaned_count} existing data files")
+        print(f"Cleaned {cleaned_count} existing data files")
     else:
-        print("📂 No existing data files to clean")
+        print("No existing data files to clean")
 
 
 def upload_to_adls(json_data: str, source_website: str):
@@ -88,17 +88,17 @@ def upload_to_adls(json_data: str, source_website: str):
             container=container_name, blob=file_path
         )
 
-        print(f"☁️ Uploading data to: {container_name}/{file_path}")
+        print(f"Uploading data to: {container_name}/{file_path}")
 
         # Upload the JSON string
         blob_client.upload_blob(json_data, overwrite=True)
 
-        print("✅ Upload to Azure Data Lake Storage completed successfully!")
-        print(f"📍 Location: {container_name}/{file_path}")
+        print("Upload to Azure Data Lake Storage completed successfully!")
+        print(f"Location: {container_name}/{file_path}")
         return True
 
     except Exception as e:
-        print(f"❌ ADLS upload error: {e}")
+        print(f"ADLS upload error: {e}")
         logging.error(f"ADLS upload error: {e}", exc_info=True)
         return False
 
@@ -125,15 +125,15 @@ def load_scraped_products(json_path="one1lk_products.json"):
         dict_count = sum(1 for item in data if isinstance(item, dict))
         string_count = sum(1 for item in data if isinstance(item, str))
 
-        print(f"📊 Data type check: {type(data)}")
+        print(f"Data type check: {type(data)}")
         if len(data) > 0:
-            print(f"📊 First item type: {type(data[0])}")
+            print(f"First item type: {type(data[0])}")
             if isinstance(data[0], str):
-                print(f"📊 First item preview: {data[0][:50]}...")
+                print(f"First item preview: {data[0][:50]}...")
 
         if string_count > 0:
             print(
-                f"🔧 Data contains strings instead of objects, attempting to parse..."
+                f"Data contains strings instead of objects, attempting to parse..."
             )
             # Try to parse string items as JSON
             fixed_data = []
@@ -149,29 +149,29 @@ def load_scraped_products(json_path="one1lk_products.json"):
 
             if len(fixed_data) > 0:
                 print(
-                    f"✅ Successfully parsed {len(fixed_data)} valid products from {len(data)} total items"
+                    f"Successfully parsed {len(fixed_data)} valid products from {len(data)} total items"
                 )
                 return fixed_data
             else:
                 raise ValueError(
-                    "❌ Failed to parse string data: No valid JSON objects found"
+                    "Failed to parse string data: No valid JSON objects found"
                 )
 
         print(
-            f"✅ Data quality check passed: {dict_count} dictionary objects, {string_count} string objects"
+            f"Data quality check passed: {dict_count} dictionary objects, {string_count} string objects"
         )
         return data
 
     except json.JSONDecodeError as e:
-        print(f"❌ JSON parsing error: {e}")
+        print(f"JSON parsing error: {e}")
         raise Exception(f"Unable to parse JSON file: {e}")
 
 
 def main():
     """Main entry point - scrape fresh products and upload to Azure"""
     print_banner()
-    print("🚀 Starting Onei.lk fresh data pipeline...")
-    print(f"⏰ Pipeline started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("Starting Onei.lk fresh data pipeline...")
+    print(f"Pipeline started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     try:
         # Setup logging
@@ -182,33 +182,33 @@ def main():
         )
 
         # Step 0: Clean existing data files
-        print("\n🧹 Step 0: Cleaning existing data files...")
+        print("\nStep 0: Cleaning existing data files...")
         clean_existing_data()
 
         # Step 1: Run fresh scraping
-        print("\n🕷️ Step 1: Scraping fresh products from Onei.lk...")
+        print("\nStep 1: Scraping fresh products from Onei.lk...")
         start_time = datetime.now()
         run_scraper()
         scraping_duration = (datetime.now() - start_time).total_seconds()
 
         # Step 2: Load scraped products and remove JSON file immediately
-        print("\n📂 Step 2: Loading scraped data...")
+        print("\nStep 2: Loading scraped data...")
         products_data = load_scraped_products("one1lk_products.json")
 
         # Immediately remove the JSON file after loading
         try:
             if os.path.exists("one1lk_products.json"):
                 os.remove("one1lk_products.json")
-                print("🗑️ Removed temporary JSON file from directory")
+                print("Removed temporary JSON file from directory")
         except Exception as e:
-            print(f"⚠️ Could not remove JSON file: {e}")
+            print(f"Could not remove JSON file: {e}")
 
         if not products_data:
-            print("❌ No valid products found in scraped data")
+            print("No valid products found in scraped data")
             return 1
 
         # Step 3: Data quality validation
-        print("\n🔍 Step 3: Data quality validation...")
+        print("\nStep 3: Data quality validation...")
         total_products = len(products_data)
         total_variants = sum(
             len(product.get("variants", []))
@@ -223,31 +223,31 @@ def main():
         dict_objects = sum(1 for item in products_data if isinstance(item, dict))
         string_objects = sum(1 for item in products_data if isinstance(item, str))
 
-        print(f"📊 Data Quality Check:")
+        print(f"Data Quality Check:")
         print(f"   Dictionary objects: {dict_objects}")
         print(f"   String objects: {string_objects}")
         print(f"   Scraping speed: {scraping_speed:.2f} products/second")
 
         if string_objects > 0:
-            print("❌ Data quality check failed - contains string objects")
-            print("💡 Please fix the data format before uploading")
+            print("Data quality check failed - contains string objects")
+            print("Please fix the data format before uploading")
             return 1
         else:
-            print("✅ Data quality check passed - all objects are properly formatted")
+            print("Data quality check passed - all objects are properly formatted")
 
         # Display scraping results
         print(f"\n{'='*60}")
-        print(" ✅ SCRAPING COMPLETED SUCCESSFULLY")
+        print("SCRAPING COMPLETED SUCCESSFULLY")
         print(f"{'='*60}")
-        print(f" 📦 Products scraped: {total_products:,}")
-        print(f" 🏷️ Variants scraped: {total_variants:,}")
-        print(f" ⏱️ Scraping time: {scraping_duration:.2f} seconds")
-        print(f" 🚀 Scraping speed: {scraping_speed:.2f} products/sec")
+        print(f" Products scraped: {total_products:,}")
+        print(f" Variants scraped: {total_variants:,}")
+        print(f" Scraping time: {scraping_duration:.2f} seconds")
+        print(f" Scraping speed: {scraping_speed:.2f} products/sec")
 
         # Step 4: Upload data to Azure Data Lake Storage
         try:
             print(f"\n{'='*60}")
-            print(" ☁️ UPLOADING TO AZURE DATA LAKE STORAGE")
+            print(" UPLOADING TO AZURE DATA LAKE STORAGE")
             print(f"{'='*60}")
 
             # Handle datetime serialization
@@ -264,9 +264,9 @@ def main():
             # Validate JSON before upload
             try:
                 json.loads(json_data)
-                print("✅ JSON validation passed")
+                print("JSON validation passed")
             except json.JSONDecodeError as e:
-                print(f"❌ JSON validation failed: {e}")
+                print(f"JSON validation failed: {e}")
                 return 1
 
             # Upload to ADLS
@@ -275,19 +275,19 @@ def main():
             )
 
             if upload_success:
-                print("🎉 Data successfully uploaded to Azure Data Lake Storage!")
-                print(f"📊 Final Summary:")
-                print(f"   📦 Products uploaded: {total_products:,}")
-                print(f"   🏷️ Variants uploaded: {total_variants:,}")
-                print(f"   💾 Data size: {len(json_data) / (1024*1024):.2f} MB")
+                print("Data successfully uploaded to Azure Data Lake Storage!")
+                print(f"Final Summary:")
+                print(f"   Products uploaded: {total_products:,}")
+                print(f"   Variants uploaded: {total_variants:,}")
+                print(f"   Data size: {len(json_data) / (1024*1024):.2f} MB")
                 print(
-                    f"   ⏱️ Total time: {(datetime.now() - start_time).total_seconds():.2f} seconds"
+                    f"   Total time: {(datetime.now() - start_time).total_seconds():.2f} seconds"
                 )
             else:
-                print("❌ Failed to upload data to ADLS")
+                print("Failed to upload data to ADLS")
 
         except Exception as e:
-            print(f"❌ Failed to upload to ADLS: {e}")
+            print(f"Failed to upload to ADLS: {e}")
             logging.error(f"ADLS upload error: {e}", exc_info=True)
 
         # Final cleanup
@@ -295,17 +295,17 @@ def main():
             for cleanup_file in ["one1lk_products.json", "one1lk_products_fixed.json"]:
                 if os.path.exists(cleanup_file):
                     os.remove(cleanup_file)
-                    print(f"🧹 Final cleanup: Removed {cleanup_file}")
+                    print(f"Final cleanup: Removed {cleanup_file}")
         except Exception as e:
-            print(f"⚠️ Final cleanup warning: {e}")
+            print(f"Final cleanup warning: {e}")
 
         return 0
 
     except KeyboardInterrupt:
-        print("\n⚠️  Scraping interrupted by user.")
+        print("\nScraping interrupted by user.")
         return 1
     except Exception as e:
-        print(f"\n❌ Scraping failed: {e}")
+        print(f"\nScraping failed: {e}")
         logging.error(f"Fatal error: {e}", exc_info=True)
         return 1
 

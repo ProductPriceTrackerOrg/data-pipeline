@@ -195,13 +195,28 @@ class HighPerformanceScraper(AppleMeScraper):
         container_name = "raw-data"
 
         try:
-            # --- 3. Connect to Azure and Upload ---
+            # --- 3. Connect to Azure and Upload with extended timeouts ---
             self.logger.info(f"Uploading data to ADLS: {container_name}/{file_path}")
-            blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+            
+            from azure.storage.blob import ContentSettings
+            
+            # Configure service client with increased timeouts
+            blob_service_client = BlobServiceClient.from_connection_string(
+                connection_string,
+                connection_timeout=60,  # Connection timeout
+                read_timeout=300,       # Read timeout
+                socket_timeout=300      # Socket timeout
+            )
+            
             blob_client = blob_service_client.get_blob_client(container=container_name, blob=file_path)
             
-            # Upload the already prepared JSON string
-            blob_client.upload_blob(json_data, overwrite=True)
+            # Upload with extended timeout and proper content type
+            blob_client.upload_blob(
+                json_data, 
+                overwrite=True,
+                content_settings=ContentSettings(content_type='application/json'),
+                timeout=300  # 5 minute timeout for upload operation
+            )
 
             self.logger.info("Upload to ADLS successful!")
             return True

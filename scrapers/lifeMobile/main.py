@@ -68,7 +68,7 @@ def clean_existing_data():
 
 def upload_to_adls(json_data: str, source_website: str):
     """
-    Uploads a JSON string to ADLS as a single JSON file.
+    Uploads a JSON string to ADLS as a single JSON file using chunked upload for large files.
     
     Args:
         json_data: Ready-to-upload JSON string with properly serialized data
@@ -91,14 +91,69 @@ def upload_to_adls(json_data: str, source_website: str):
     container_name = "raw-data"
 
     try:
-        # Connect to Azure and Upload
-        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=file_path)
-
-        print(f"Uploading data to: {container_name}/{file_path}")
+        # Import required Azure modules
+        from azure.storage.blob import ContentSettings, BlobBlock
+        import uuid
+        import base64
         
-        # Upload the JSON string
-        blob_client.upload_blob(json_data, overwrite=True)
+        # Convert JSON string to bytes
+        data_bytes = json_data.encode('utf-8')
+        file_size = len(data_bytes)
+        print(f"File size: {file_size / (1024 * 1024):.2f} MB")
+        
+        # Configure service client with increased timeouts
+        blob_service_client = BlobServiceClient.from_connection_string(
+            connection_string,
+            connection_timeout=60,  # Connection timeout
+            read_timeout=300,       # Read timeout
+            socket_timeout=300      # Socket timeout
+        )
+        
+        # Get blob client
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=file_path)
+        
+        print(f"Uploading data to: {container_name}/{file_path}")
+        print(f"Using chunked upload method for large file")
+        
+        # Define chunk size - 4 MB per chunk
+        chunk_size = 4 * 1024 * 1024  # 4 MB chunks
+        
+        # Calculate number of chunks
+        num_chunks = (file_size + chunk_size - 1) // chunk_size
+        print(f"Splitting file into {num_chunks} chunks of {chunk_size / (1024 * 1024):.2f} MB each")
+        
+        # Generate block IDs
+        block_ids = []
+        
+        # Upload chunks
+        for i in range(num_chunks):
+            # Calculate chunk start and end
+            start = i * chunk_size
+            end = min(start + chunk_size, file_size)
+            
+            # Get the chunk data
+            chunk_data = data_bytes[start:end]
+            
+            # Generate unique block ID and encode it to base64
+            block_id = str(uuid.uuid4())
+            encoded_block_id = base64.b64encode(block_id.encode('utf-8')).decode('utf-8')
+            block_ids.append(encoded_block_id)
+            
+            # Upload the block
+            print(f"Uploading chunk {i+1}/{num_chunks} ({len(chunk_data) / (1024 * 1024):.2f} MB)...")
+            blob_client.stage_block(
+                block_id=encoded_block_id,
+                data=chunk_data,
+                timeout=60  # Shorter timeout for individual chunks
+            )
+            
+        # Commit the blocks with proper content settings
+        print(f"Committing all blocks...")
+        blob_client.commit_block_list(
+            block_ids,
+            content_settings=ContentSettings(content_type='application/json'),
+            timeout=60
+        )
 
         print("Upload to Azure Data Lake Storage completed successfully!")
         print(f"Location: {container_name}/{file_path}")
@@ -205,17 +260,17 @@ def main():
         print("\nStep 2: Loading scraped data...")
         products_data = load_scraped_products("lifemobile_products.json")
         
-        # Immediately remove the JSON file after loading
-        try:
-            if os.path.exists("lifemobile_products.json"):
-                os.remove("lifemobile_products.json")
-                print("Removed temporary JSON file from directory")
-        except Exception as e:
-            print(f"Could not remove JSON file: {e}")
+        # # Immediately remove the JSON file after loading
+        # try:
+        #     if os.path.exists("lifemobile_products.json"):
+        #         os.remove("lifemobile_products.json")
+        #         print("Removed temporary JSON file from directory")
+        # except Exception as e:
+        #     print(f"Could not remove JSON file: {e}")
 
-        if not products_data:
-            print("No valid products found in scraped data")
-            return 1
+        # if not products_data:
+        #     print("No valid products found in scraped data")
+        #     return 1
         
         # Step 3: Data quality validation
         print("\nStep 3: Data quality validation...")
@@ -292,15 +347,15 @@ def main():
             print("\nAzure SDK not available - skipping upload")
             print("Install with: pip install azure-storage-blob")
 
-        # Final cleanup
-        try:
-            cleanup_files = ["lifemobile_products.json", "lifemobile_products_fixed.json"]
-            for cleanup_file in cleanup_files:
-                if os.path.exists(cleanup_file):
-                    os.remove(cleanup_file)
-                    print(f"Final cleanup: Removed {cleanup_file}")
-        except Exception as e:
-            print(f"Final cleanup warning: {e}")
+        # # Final cleanup
+        # try:
+        #     cleanup_files = ["lifemobile_products.json", "lifemobile_products_fixed.json"]
+        #     for cleanup_file in cleanup_files:
+        #         if os.path.exists(cleanup_file):
+        #             os.remove(cleanup_file)
+        #             print(f"Final cleanup: Removed {cleanup_file}")
+        # except Exception as e:
+        #     print(f"Final cleanup warning: {e}")
 
         print(f"\nPipeline completed successfully!")
         return 0

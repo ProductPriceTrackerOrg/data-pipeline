@@ -22,11 +22,11 @@ with DAG(
         bash_command="echo 'Starting data ingestion pipeline...'"
     )
 
-    # # Task to run the AppleMe scraper
-    # scrape_appleme_task = BashOperator(
-    #     task_id="scrape_appleme",
-    #     bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
-    # )
+    # Task to run the AppleMe scraper
+    scrape_appleme_task = BashOperator(
+        task_id="scrape_appleme",
+        bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
+    )
 
     # Task to run the SimplyTek scraper
     scrape_simplytek_task = BashOperator(
@@ -34,17 +34,17 @@ with DAG(
         bash_command="cd /opt/airflow/scrapers/simplytek && python -u main.py",
     )
 
-    #     # Task to run the Onei.lk scraper
-    # scrape_onei_task = BashOperator(
-    #     task_id="scrape_onei",
-    #     bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
-    # )
+    # Task to run the Onei.lk scraper
+    scrape_onei_task = BashOperator(
+        task_id="scrape_onei",
+        bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
+    )
 
-    #     # Task to run the lifeMobile  scraper
-    # scrape_lifeMobile_task = BashOperator(
-    #     task_id="scrape_lifemobile",
-    #     bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
-    # )
+    # Task to run the lifeMobile  scraper
+    scrape_lifeMobile_task = BashOperator(
+        task_id="scrape_lifemobile",
+        bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
+    )
 
     # Dummy end task for better visualization
     end_task = BashOperator(
@@ -53,5 +53,5 @@ with DAG(
     )
 
     # Set the dependencies
-    # start_task >> [scrape_appleme_task, scrape_simplytek_task, scrape_onei_task, scrape_lifeMobile_task] >> end_task
-    start_task >> scrape_simplytek_task >> end_task
+    start_task >> [scrape_appleme_task, scrape_simplytek_task, scrape_onei_task, scrape_lifeMobile_task] >> end_task
+    # start_task >> scrape_simplytek_task >> end_task

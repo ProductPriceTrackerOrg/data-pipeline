@@ -65,3 +65,7 @@ scrapers/appleme/scraped_data/appleme_products.json
 
 
 
+.scrapy/
+lifemobile_products.json
+one1lk_products.json
+lifemobile_products.json

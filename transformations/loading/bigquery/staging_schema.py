@@ -29,7 +29,6 @@ def get_staging_table_id(project_id: str, dataset: str, source: str) -> str:
 
 def create_staging_table_ddl(project_id: str, dataset: str, source: str) -> str:
     """Generate DDL to create staging table for a source"""
-    table_name = get_staging_table_name(source)
     table_id = get_staging_table_id(project_id, dataset, source)
     
     return f"""
@@ -76,7 +75,7 @@ def validate_staging_table_schema(table: bigquery.Table) -> List[str]:
 def get_data_validation_query(table_id: str, date: str) -> str:
     """Generate query to validate data in staging table - works with JSON arrays"""
     return f"""
-    SELECT 
+    SELECT
         source_website,
         scrape_date,
         COUNT(*) as row_count,
@@ -94,15 +93,15 @@ def get_data_validation_query(table_id: str, date: str) -> str:
 def get_sample_products_query(table_id: str, date: str, limit: int = 5) -> str:
     """Generate query to get sample products for inspection - unnests JSON arrays"""
     return f"""
-    SELECT 
+    SELECT
         JSON_EXTRACT_SCALAR(product, '$.product_id_native') as product_id,
         JSON_EXTRACT_SCALAR(product, '$.product_title') as title,
         JSON_EXTRACT_SCALAR(product, '$.brand') as brand,
         source_website,
-        ARRAY_LENGTH(JSON_EXTRACT_ARRAY(product, '$.variants')) as variant_count,
+        ARRAY_LENGTH(JSON_QUERY_ARRAY(product, '$.variants')) as variant_count,
         loaded_at
     FROM `{table_id}`,
-    UNNEST(JSON_EXTRACT_ARRAY(raw_json_data)) as product
+    UNNEST(JSON_QUERY_ARRAY(raw_json_data)) as product
     WHERE scrape_date = '{date}'
     LIMIT {limit}
     """
@@ -127,7 +126,7 @@ def get_staging_table_info():
 
 if __name__ == "__main__":
     # Demo the schema utilities
-    print("🏗️ BigQuery Staging Schema Utilities")
+    print("BigQuery Staging Schema Utilities")
     print("=" * 50)
     
     # Test table name generation

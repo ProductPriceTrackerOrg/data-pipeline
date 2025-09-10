@@ -23,6 +23,7 @@ azure-storage-blob==12.26.0
 beautifulsoup4==4.13.4
 blinker==1.9.0
 Brotli==1.1.0
+cachetools==5.5.2
 cadwyn==5.4.4
 certifi==2025.7.14
 cffi==1.17.1
@@ -33,6 +34,7 @@ colorlog==6.9.0
 cron-descriptor==1.4.5
 croniter==6.0.0
 cryptography==45.0.6
+-e git+https://github.com/ProductPriceTrackerOrg/data-pipeline.git@b91ba4a0f0ba46b5acd093c4f5c78c26470df76d#egg=data_pipeline
 DateTime==5.5
 Deprecated==1.2.18
 dill==0.4.0
@@ -42,11 +44,18 @@ fastapi==0.116.1
 fastapi-cli==0.0.8
 fastapi-cloud-cli==0.1.5
 Flask==3.1.2
-frozenlist
+frozenlist==1.7.0
 fsspec==2025.7.0
+google-api-core==2.25.1
+google-auth==2.40.3
+google-cloud-bigquery==3.37.0
+google-cloud-core==2.4.3
+google-crc32c==1.7.1
+google-resumable-media==2.7.2
 googleapis-common-protos==1.70.0
 greenlet==3.2.4
 grpcio==1.74.0
+grpcio-status==1.74.0
 gunicorn==23.0.0
 h11==0.16.0
 httpcore==1.0.9
@@ -72,6 +81,7 @@ methodtools==0.4.7
 more-itertools==10.7.0
 msgspec==0.19.0
 multidict==6.6.3
+nest-asyncio==1.5.6
 numpy==2.3.2
 opentelemetry-api==1.36.0
 opentelemetry-exporter-otlp==1.36.0
@@ -87,8 +97,11 @@ pathspec==0.12.1
 pendulum==3.1.0
 pluggy==1.6.0
 propcache==0.3.2
+proto-plus==1.26.1
 protobuf==6.32.0
 psutil==7.0.0
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
 pycparser==2.22
 pydantic==2.11.7
 pydantic_core==2.33.2
@@ -109,6 +122,8 @@ rich-argparse==1.7.1
 rich-toolkit==0.15.0
 rignore==0.6.4
 rpds-py==0.27.0
+rsa==4.9.1
+selectolax==0.3.17
 sentry-sdk==2.35.0
 setproctitle==1.3.6
 shellingham==1.5.4
@@ -144,8 +159,3 @@ wrapt==1.17.3
 yarl==1.20.1
 zipp==3.23.0
 zope.interface==7.2
-
-# Additional packages for scrapers
-nest-asyncio==1.5.6
-# Use an older version of selectolax that has pre-compiled wheels
-selectolax==0.3.17

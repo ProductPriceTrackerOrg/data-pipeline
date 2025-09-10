@@ -4,6 +4,10 @@ Transforms raw product data from staging to warehouse with robust error handling
 HTML cleaning, Pydantic validation, and fallback strategies.
 """
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
 import json
 import re
 import html
@@ -13,7 +17,7 @@ import logging
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ValidationError, validator, Field
 from google.cloud import bigquery
-from ..utils.transformation_utils import TransformationBase
+from transformations.warehouse.utils.transformation_utils import TransformationBase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -744,8 +748,9 @@ def main():
     Main execution function for DimShopProduct transformation.
     """
     try:
+        specific_date = date(2025, 9, 8)
         transformer = DimShopProductTransformer()
-        transformer.transform_and_load()
+        transformer.transform_and_load(specific_date)
         
     except Exception as e:
         logger.error(f"DimShopProduct transformation failed: {e}")

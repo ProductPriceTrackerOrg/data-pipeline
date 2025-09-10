@@ -1,195 +1,181 @@
+import sys
+import os
+
+# This ensures the script can find the 'transformations' module
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
 """
 DimShop Transformation Script
-Extracts unique shops from staging JSON data and adds only new shops to the warehouse.
+Dynamically discovers all staging tables, extracts unique shop metadata,
+and incrementally loads only new shops into the warehouse.
 """
 
-import json
-from datetime import datetime
-from typing import List, Dict, Set
+from typing import Dict, Set, List
 import logging
 from google.cloud import bigquery
-from ..utils.transformation_utils import TransformationBase, generate_md5_id
+from transformations.warehouse.utils.transformation_utils import TransformationBase
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class DimShopTransformer(TransformationBase):
     """
-    Handles the transformation and loading of shop dimension data.
-    Only adds new shops that don't already exist in the warehouse.
+    Handles the dynamic extraction, transformation, and incremental loading of shop dimension data.
     """
     
     def __init__(self, project_id: str = "price-pulse-470211"):
         """
         Initialize the DimShop transformer.
-        
-        Args:
-            project_id: Google Cloud project ID
         """
         super().__init__(project_id)
         self.table_name = "DimShop"
         
-    def extract_shops_from_staging(self) -> Set[str]:
+    def extract_shops_from_staging(self) -> Dict[str, Dict]:
         """
-        Extract unique shop names from all staging tables.
+        Dynamically discovers and queries all staging tables to extract unique shop metadata.
         
         Returns:
-            Set of unique shop names found in staging data
+            A dictionary where key is shop_name and value is a dict of its metadata.
+            Example: {'appleme.lk': {'phone': '+94...', 'whatsapp': '+94...'}}
         """
-        all_shops = set()
+        all_shops_metadata = {}
         
-        # Get all staging tables
-        staging_tables = [
-            "stg_raw_simplytek",
-            "stg_raw_appleme", 
-            "stg_raw_onei_lk"
-        ]
+        # 1. Dynamic Table Discovery
+        logger.info(f"Discovering tables in dataset '{self.staging_dataset}'...")
+        staging_tables = self.client.list_tables(self.staging_dataset)
         
-        for table_name in staging_tables:
+        for table in staging_tables:
+            table_id = table.table_id
+            logger.info(f"Processing staging table: {table_id}")
             try:
-                # Query to extract shop names from JSON data
+                # 2. Correct Data Extraction Query
+                # Extracts shop name from its column and contact details from the nested JSON.
+                # It only needs to check the first element of the JSON array ('$[0]') for efficiency.
                 query = f"""
                 SELECT DISTINCT
-                    JSON_EXTRACT_SCALAR(raw_json_data, '$.shop_name') as shop_name
-                FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
-                WHERE JSON_EXTRACT_SCALAR(raw_json_data, '$.shop_name') IS NOT NULL
+                    source_website AS shop_name,
+                    JSON_EXTRACT_SCALAR(raw_json_data, '$[0].metadata.shop_contact_phone') AS contact_phone,
+                    JSON_EXTRACT_SCALAR(raw_json_data, '$[0].metadata.shop_contact_whatsapp') AS contact_whatsapp
+                FROM
+                    `{self.project_id}.{self.staging_dataset}.{table_id}`
+                WHERE
+                    source_website IS NOT NULL AND source_website != ''
                 """
                 
                 results = self.client.query(query).result()
                 
+                count = 0
                 for row in results:
-                    if row.shop_name:
-                        all_shops.add(row.shop_name.strip())
-                        
-                logger.info(f"Extracted shops from {table_name}")
+                    shop_name = row.shop_name.strip()
+                    if shop_name and shop_name not in all_shops_metadata:
+                        all_shops_metadata[shop_name] = {
+                            'contact_phone': row.contact_phone,
+                            'contact_whatsapp': row.contact_whatsapp
+                        }
+                        count += 1
                 
+                if count > 0:
+                    logger.info(f"Found {count} unique shop(s) in {table_id}")
+            
             except Exception as e:
-                logger.warning(f"Could not extract shops from {table_name}: {e}")
+                logger.warning(f"Could not extract shops from {table_id}: {e}")
                 continue
                 
-        logger.info(f"Found {len(all_shops)} unique shops in staging: {sorted(all_shops)}")
-        return all_shops
+        logger.info(f"Found {len(all_shops_metadata)} total unique shops across all staging tables.")
+        return all_shops_metadata
     
     def get_existing_shops(self) -> Set[str]:
         """
-        Get shop names that already exist in DimShop.
-        
-        Returns:
-            Set of existing shop names
+        Gets shop names that already exist in the DimShop table.
         """
         try:
-            query = f"""
-            SELECT shop_name
-            FROM `{self.get_table_ref(self.table_name)}`
-            """
-            
+            query = f"SELECT shop_name FROM `{self.get_table_ref(self.table_name)}`"
             results = self.client.query(query).result()
             existing_shops = {row.shop_name for row in results}
-            
-            logger.info(f"Found {len(existing_shops)} existing shops in warehouse: {sorted(existing_shops)}")
+            logger.info(f"Found {len(existing_shops)} existing shops in the warehouse.")
             return existing_shops
-            
-        except Exception as e:
-            # Table might be empty or not exist yet
-            logger.info(f"No existing shops found (table empty or doesn't exist): {e}")
+        except Exception:
+            logger.info("No existing DimShop table found. Will create a new one.")
             return set()
     
     def get_next_shop_id(self) -> int:
         """
-        Get the next available shop_id (sequential: 0, 1, 2, 3...).
-        
-        Returns:
-            Next sequential shop_id to use
+        Gets the next available sequential shop_id.
         """
         try:
-            query = f"""
-            SELECT COALESCE(MAX(shop_id), -1) + 1 as next_id
-            FROM `{self.get_table_ref(self.table_name)}`
-            """
-            
+            query = f"SELECT COALESCE(MAX(shop_id), -1) + 1 as next_id FROM `{self.get_table_ref(self.table_name)}`"
             result = list(self.client.query(query).result())
-            next_id = result[0].next_id if result else 0
-            logger.info(f"Next shop_id will be: {next_id}")
-            return next_id
-            
-        except Exception as e:
-            # Table might be empty or not exist yet, start from 0
-            logger.info(f"Starting shop_id from 0 (table empty or doesn't exist): {e}")
+            return result[0].next_id if result else 0
+        except Exception:
+            logger.info("Starting shop_id from 0.")
             return 0
     
-    def generate_shop_records(self, new_shop_names: Set[str]) -> List[Dict]:
+    def _clean_phone_number(self, phone_number: str) -> str | None:
         """
-        Generate shop dimension records for new shops.
+        Cleans a phone number by removing spaces and non-numeric characters,
+        preserving the leading '+' for international format.
         
         Args:
-            new_shop_names: Set of new shop names to add
+            phone_number: The raw phone number string.
             
         Returns:
-            List of shop dimension records
+            A cleaned phone number string (e.g., '+94777911011') or None if input is invalid.
+        """
+        if not phone_number or not isinstance(phone_number, str):
+            return None
+        
+        # Remove common formatting characters like spaces, dashes, and parentheses
+        cleaned = phone_number.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+        
+        # A valid number should start with '+' and be followed by digits.
+        if cleaned.startswith('+') and cleaned[1:].isdigit():
+            return cleaned
+        
+        # Return None if the format is unexpected to ensure data quality
+        logger.warning(f"Unexpected phone number format encountered: '{phone_number}'. Storing as NULL.")
+        return None
+
+    def generate_shop_records(self, new_shops_metadata: Dict[str, Dict]) -> List[Dict]:
+        """
+        Generates dimension records for the new shops.
         """
         shop_records = []
         next_shop_id = self.get_next_shop_id()
         
-        for i, shop_name in enumerate(sorted(new_shop_names)):  # Sort for consistent ordering
-            shop_id = next_shop_id + i  # Sequential IDs: 0, 1, 2, 3...
+        # Sort for consistent ID assignment
+        for i, shop_name in enumerate(sorted(new_shops_metadata.keys())):
+            metadata = new_shops_metadata[shop_name]
             
-            # Try to extract website URL from shop name
-            website_url = self._generate_website_url(shop_name)
+            # Clean the phone numbers before creating the record
+            cleaned_phone = self._clean_phone_number(metadata.get('contact_phone'))
+            cleaned_whatsapp = self._clean_phone_number(metadata.get('contact_whatsapp'))
             
             shop_record = {
-                'shop_id': shop_id,
+                'shop_id': next_shop_id + i,
                 'shop_name': shop_name,
-                'website_url': website_url,
-                'contact_phone': None,      # Can be populated later manually
-                'contact_whatsapp': None    # Can be populated later manually
+                'website_url': f"https://{shop_name}", # Generate website URL
+                'contact_phone': cleaned_phone,
+                'contact_whatsapp': cleaned_whatsapp
             }
-            
             shop_records.append(shop_record)
             
-        logger.info(f"Generated {len(shop_records)} new shop records with IDs {next_shop_id} to {next_shop_id + len(shop_records) - 1}")
+        logger.info(f"Generated {len(shop_records)} new shop records.")
         return shop_records
-    
-    def _generate_website_url(self, shop_name: str) -> str:
-        """
-        Generate likely website URL from shop name.
-        
-        Args:
-            shop_name: Name of the shop
-            
-        Returns:
-            Probable website URL
-        """
-        # Basic logic to generate URLs
-        if shop_name.endswith('.lk'):
-            return f"https://{shop_name}"
-        elif shop_name.endswith('.com'):
-            return f"https://{shop_name}"
-        else:
-            # Try to guess based on common patterns
-            if 'tek' in shop_name.lower():
-                return f"https://{shop_name}.lk"
-            else:
-                return f"https://{shop_name}.com"
     
     def load_new_shops(self, shop_records: List[Dict]) -> None:
         """
-        Load new shop records to BigQuery DimShop table.
-        
-        Args:
-            shop_records: List of shop records to load
+        Loads the new shop records to the BigQuery DimShop table.
         """
         if not shop_records:
-            logger.info("No new shops to load")
+            logger.info("No new shops to load.")
             return
             
         table_ref = self.get_table_ref(self.table_name)
-        
-        # Configure job to append new shops
         job_config = bigquery.LoadJobConfig(
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             schema=[
-                bigquery.SchemaField("shop_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("shop_id", "INT64", mode="REQUIRED"),
                 bigquery.SchemaField("shop_name", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("website_url", "STRING", mode="NULLABLE"),
                 bigquery.SchemaField("contact_phone", "STRING", mode="NULLABLE"),
@@ -198,53 +184,52 @@ class DimShopTransformer(TransformationBase):
         )
         
         try:
-            # Load data to BigQuery
-            job = self.client.load_table_from_json(
-                shop_records, table_ref, job_config=job_config
-            )
+            job = self.client.load_table_from_json(shop_records, table_ref, job_config=job_config)
             job.result()  # Wait for completion
             
-            # Verify the load
-            table = self.client.get_table(table_ref)
-            logger.info(f"Successfully added {len(shop_records)} new shops to {table_ref}")
-            logger.info(f"Total shops in DimShop: {table.num_rows}")
-            
-            # Log the new shops added
+            # FIX: Use table_ref directly as it's a string, not an object with a .path attribute.
+            logger.info(f"Successfully loaded {job.output_rows} new shops to {table_ref}")
             for record in shop_records:
-                logger.info(f"Added shop: {record['shop_name']} (ID: {record['shop_id']})")
+                logger.info(f"-> Added shop: {record['shop_name']} (ID: {record['shop_id']})")
                 
         except Exception as e:
+            # FIX: Use table_ref directly in the error message as well.
             logger.error(f"Failed to load shops to {table_ref}: {e}")
             raise
     
     def transform_and_load(self) -> None:
         """
-        Complete transformation process for DimShop.
-        Only processes new shops that don't already exist.
+        Orchestrates the entire transformation process for the Shop dimension.
         """
         self.log_transformation_start(self.table_name)
         
-        # Extract all shops from staging
-        staging_shops = self.extract_shops_from_staging()
-        
-        if not staging_shops:
-            logger.info("No shops found in staging data")
+        # 1. Extract all unique shops from all staging tables
+        staging_shops_metadata = self.extract_shops_from_staging()
+        if not staging_shops_metadata:
+            logger.info("No shops found in any staging table. Ending process.")
+            self.log_transformation_complete(self.table_name, 0)
             return
             
-        # Get existing shops
+        # 2. Get shops that are already in the warehouse
         existing_shops = self.get_existing_shops()
         
-        # Find new shops
-        new_shops = staging_shops - existing_shops
+        # 3. Find the new shops that need to be added
+        new_shop_names = set(staging_shops_metadata.keys()) - existing_shops
         
-        if not new_shops:
-            logger.info("No new shops to add - all shops already exist in DimShop")
+        if not new_shop_names:
+            logger.info("No new shops to add - all shops from staging already exist in DimShop.")
+            self.log_transformation_complete(self.table_name, 0)
             return
-            
-        logger.info(f"Found {len(new_shops)} new shops to add: {sorted(new_shops)}")
         
-        # Generate and load new shop records
-        shop_records = self.generate_shop_records(new_shops)
+        logger.info(f"Found {len(new_shop_names)} new shops to add: {sorted(list(new_shop_names))}")
+        
+        # Filter the full metadata dict to only include new shops
+        new_shops_to_add = {name: staging_shops_metadata[name] for name in new_shop_names}
+        
+        # 4. Generate records for the new shops
+        shop_records = self.generate_shop_records(new_shops_to_add)
+        
+        # 5. Load the new records into the warehouse
         self.load_new_shops(shop_records)
         
         self.log_transformation_complete(self.table_name, len(shop_records))
@@ -256,10 +241,10 @@ def main():
     try:
         transformer = DimShopTransformer()
         transformer.transform_and_load()
-        
     except Exception as e:
-        logger.error(f"DimShop transformation failed: {e}")
+        logger.error(f"DimShop transformation failed: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
     main()
+

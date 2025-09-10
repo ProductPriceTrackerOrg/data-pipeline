@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from loader import BigQueryLoader
-from staging_schemas import get_staging_table_name
+from transformations.loading.bigquery.staging_data_cleaner import get_staging_table_name
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

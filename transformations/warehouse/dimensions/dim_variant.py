@@ -54,14 +54,14 @@ class DimVariantTransformation:
     
     def extract_variants_from_staging(self, table_name: str, target_date: str) -> List[Dict[str, Any]]:
         """Extract variant data from a staging table"""
-        # Since raw_json_data contains an array of products, we need to unnest it first
+        
+        # Use the same approach as in dim_shop_product.py
         query = f"""
         SELECT 
-            JSON_VALUE(product, '$.product_id_native') as product_id_native,
+            raw_json_data,
             source_website,
-            product as product_json
-        FROM `{self.project_id}.staging.{table_name}`,
-        UNNEST(JSON_QUERY_ARRAY(raw_json_data)) AS product
+            scrape_date
+        FROM `{self.project_id}.staging.{table_name}`
         WHERE scrape_date = '{target_date}'
         """
         
@@ -71,23 +71,34 @@ class DimVariantTransformation:
             
             for row in results:
                 try:
-                    # BigQuery returns product as dict, not JSON string
-                    product_data = row.product_json if isinstance(row.product_json, dict) else json.loads(row.product_json)
-                    source_website = row.source_website
-                    product_id_native = row.product_id_native
+                    # Parse JSON data
+                    if isinstance(row.raw_json_data, str):
+                        json_data = json.loads(row.raw_json_data)
+                    else:
+                        json_data = row.raw_json_data
                     
-                    # Generate shop_product_id for this product
-                    shop_product_id = self.generate_shop_product_id(source_website, product_id_native)
+                    # Handle JSON array of products (each row contains multiple products)
+                    products_to_process = json_data if isinstance(json_data, list) else [json_data]
                     
-                    # Extract each variant (every product has at least one variant)
-                    for variant_data in product_data.get('variants', []):
-                        variant_info = {
-                            'shop_product_id': shop_product_id,
-                            'source_website': source_website,
-                            'product_id_native': product_id_native,
-                            'variant_data': variant_data
-                        }
-                        variants.append(variant_info)
+                    for product_data in products_to_process:
+                        source_website = row.source_website
+                        product_id_native = product_data.get('product_id_native', '')
+                        
+                        # Skip if no product_id_native
+                        if not product_id_native:
+                            continue
+                            
+                        shop_product_id = self.generate_shop_product_id(source_website, product_id_native)
+                        
+                        # Process variants for this product
+                        for variant_data in product_data.get('variants', []):
+                            variant_info = {
+                                'shop_product_id': shop_product_id,
+                                'source_website': source_website,
+                                'product_id_native': product_id_native,
+                                'variant_data': variant_data
+                            }
+                            variants.append(variant_info)
                         
                 except (json.JSONDecodeError, KeyError, AttributeError) as e:
                     logging.warning(f"Error parsing product data: {e}")
@@ -191,8 +202,12 @@ class DimVariantTransformation:
             logging.error(f"Error loading variants to BigQuery: {e}")
             return False
     
-    def transform_and_load(self, target_date: str = '2025-09-06'):
+    def transform_and_load(self, target_date: str = None):
         """Run the complete DimVariant transformation"""
+        if target_date is None:
+            from datetime import date
+            target_date = date.today().strftime("%Y-%m-%d")
+        
         print(f"🚀 Starting DimVariant transformation for {target_date}")
         
         # First, get existing variant_ids to avoid duplicates
@@ -252,8 +267,12 @@ class DimVariantTransformation:
 def main():
     """Main execution function"""
     transformer = DimVariantTransformation()
-    # Use 2025-09-06 for now since 2025-09-07 data hasn't been scraped yet
-    success = transformer.transform_and_load('2025-09-06')
+    # Use today's date by default (will auto-detect current date)
+    # Define the date you want to pass as a string
+    # my_date_string = "2025-09-08"
+    from datetime import date
+    my_date_string = date(2025, 9, 8).strftime("%Y-%m-%d")
+    success = transformer.transform_and_load(my_date_string)
     
     if success:
         logging.info("DimVariant transformation completed successfully")

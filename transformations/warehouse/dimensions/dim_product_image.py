@@ -5,6 +5,7 @@ Includes duplicate prevention and proper sort order handling.
 """
 
 import hashlib
+import json
 import logging
 from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
@@ -37,19 +38,28 @@ class DimProductImageTransformer:
         self.warehouse_dataset = "warehouse"
         self.table_name = "DimProductImage"
         
-        # Source to shop_id mapping
-        self.shop_lookup = {
-            "appleme.lk": 1,
-            "simplytek.lk": 2,
-            "onei.lk": 3
-        }
-    
     def generate_shop_product_id(self, source_website: str, product_id_native: str) -> str:
         """Generate deterministic shop_product_id using MD5 hash"""
         business_key = f"{source_website}|{product_id_native}"
         md5_hash = hashlib.md5(business_key.encode('utf-8')).hexdigest()
         return md5_hash
     
+    # FIX 1: Added dynamic table discovery function
+    def get_all_staging_tables(self) -> List[str]:
+        """Get all staging tables that contain product data"""
+        query = """
+        SELECT table_name
+        FROM `price-pulse-470211.staging.INFORMATION_SCHEMA.TABLES`
+        WHERE table_name LIKE 'stg_raw_%'
+        AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+        """
+        
+        results = list(self.client.query(query).result())
+        tables = [row.table_name for row in results]
+        logger.info(f"Discovered {len(tables)} staging tables: {tables}")
+        return tables
+
     def get_existing_image_ids(self) -> set:
         """Get existing image_ids to avoid duplicates"""
         query = f"""
@@ -69,7 +79,7 @@ class DimProductImageTransformer:
     def get_next_image_id(self) -> int:
         """Get the next available image_id"""
         query = f"""
-        SELECT COALESCE(MAX(image_id), -1) + 1 as next_id
+        SELECT COALESCE(MAX(image_id), 0) + 1 as next_id
         FROM `{self.project_id}.{self.warehouse_dataset}.{self.table_name}`
         """
         
@@ -79,21 +89,21 @@ class DimProductImageTransformer:
             logger.info(f"Next image_id will start from: {next_id}")
             return next_id
         except Exception as e:
-            logger.error(f"Error getting next image_id: {e}")
-            return 0
+            # If table doesn't exist, start from 1
+            logger.warning(f"Could not get next image_id (table might be empty): {e}. Starting from 1.")
+            return 1
     
     def extract_images_from_staging(self, table_name: str, target_date: str) -> List[Dict]:
         """Extract product images from staging table for a specific date"""
+        
+        # Using the approach from dim_shop_product.py - get raw JSON data first, then parse in Python
         query = f"""
         SELECT 
-            JSON_VALUE(product, '$.product_id_native') as product_id_native,
+            raw_json_data,
             source_website,
-            JSON_QUERY_ARRAY(product, '$.image_urls') as image_urls
-        FROM `{self.project_id}.{self.staging_dataset}.{table_name}`,
-        UNNEST(JSON_QUERY_ARRAY(raw_json_data)) AS product
+            scrape_date
+        FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
         WHERE scrape_date = '{target_date}'
-        AND JSON_QUERY_ARRAY(product, '$.image_urls') IS NOT NULL
-        AND ARRAY_LENGTH(JSON_QUERY_ARRAY(product, '$.image_urls')) > 0
         """
         
         try:
@@ -101,27 +111,43 @@ class DimProductImageTransformer:
             images = []
             
             for row in results:
-                # Parse image URLs array
-                if row.image_urls:
-                    import json
-                    image_urls = json.loads(row.image_urls) if isinstance(row.image_urls, str) else row.image_urls
+                try:
+                    # Parse JSON data
+                    if isinstance(row.raw_json_data, str):
+                        json_data = json.loads(row.raw_json_data)
+                    else:
+                        json_data = row.raw_json_data
                     
-                    # Generate shop_product_id
-                    shop_product_id = self.generate_shop_product_id(
-                        row.source_website, 
-                        row.product_id_native
-                    )
+                    # Handle JSON array of products (each row contains multiple products)
+                    products_to_process = json_data if isinstance(json_data, list) else [json_data]
                     
-                    # Create image records with sort_order
-                    for sort_order, image_url in enumerate(image_urls, 1):
-                        if image_url:  # Skip empty URLs
-                            images.append({
-                                'shop_product_id': shop_product_id,
-                                'image_url': image_url.strip(),
-                                'sort_order': sort_order,
-                                'source_website': row.source_website,
-                                'product_id_native': row.product_id_native
-                            })
+                    for product_data in products_to_process:
+                        # Get required fields
+                        product_id_native = product_data.get('product_id_native')
+                        image_urls = product_data.get('image_urls', [])
+                        
+                        # Skip products without image URLs or product ID
+                        if not product_id_native or not image_urls:
+                            continue
+                            
+                        # Generate shop_product_id
+                        shop_product_id = self.generate_shop_product_id(
+                            row.source_website, 
+                            product_id_native
+                        )
+                        
+                        # Process each image URL
+                        for sort_order, image_url in enumerate(image_urls, 1):
+                            if image_url:
+                                images.append({
+                                    'shop_product_id': shop_product_id,
+                                    'image_url': image_url,
+                                    'sort_order': sort_order
+                                })
+                                
+                except Exception as e:
+                    logger.warning(f"Error parsing product data: {e}")
+                    continue
             
             logger.info(f"Extracted {len(images)} images from {table_name}")
             return images
@@ -138,36 +164,28 @@ class DimProductImageTransformer:
         
         for raw_image in raw_images:
             try:
-                # Create validated image record
                 image_data = {
                     'image_id': current_image_id,
                     'shop_product_id': raw_image['shop_product_id'],
                     'image_url': raw_image['image_url'],
                     'sort_order': raw_image['sort_order'],
-                    'scraped_date': target_date  # Keep as date object for Pydantic
+                    'scraped_date': target_date
                 }
                 
-                # Validate with Pydantic
                 validated_image = ProductImageModel(**image_data)
                 
-                # Convert to dict and handle date serialization
                 image_dict = validated_image.model_dump()
-                image_dict['scraped_date'] = target_date.strftime('%Y-%m-%d')  # Convert date to string for BigQuery
+                # Pydantic keeps it as a date, we convert to string for the final load
+                image_dict['scraped_date'] = image_dict['scraped_date'].isoformat()
                 successful_images.append(image_dict)
                 current_image_id += 1
                 
             except ValidationError as e:
                 logger.warning(f"Validation failed for image: {e}")
-                failed_images.append({
-                    'raw_data': raw_image,
-                    'error': str(e)
-                })
+                failed_images.append({'raw_data': raw_image, 'error': str(e)})
             except Exception as e:
                 logger.error(f"Error processing image: {e}")
-                failed_images.append({
-                    'raw_data': raw_image,
-                    'error': str(e)
-                })
+                failed_images.append({'raw_data': raw_image, 'error': str(e)})
         
         return successful_images, failed_images
     
@@ -181,62 +199,46 @@ class DimProductImageTransformer:
             
             if image_key not in existing_keys:
                 new_images.append(image)
+                # Add the new key to the set to handle duplicates within the same batch
+                existing_keys.add(image_key)
             else:
                 duplicate_count += 1
         
         logger.info(f"Deduplication results:")
-        logger.info(f"  - Total input images: {len(images)}")
+        logger.info(f"  - Total processed images: {len(images)}")
         logger.info(f"  - Already exist in BigQuery: {duplicate_count}")
-        logger.info(f"  - New unique images: {len(new_images)}")
+        logger.info(f"  - New unique images to load: {len(new_images)}")
         
         return new_images, duplicate_count
     
     def load_images_to_bigquery(self, images: List[Dict]) -> bool:
-        """Load new images to BigQuery with daily processing logic"""
+        """Load new images to BigQuery"""
         if not images:
             logger.info("✅ No new images to load")
             return True
-
-        # Deduplicate images in-memory before loading
-        unique_images = {}
-        for img in images:
-            key = f"{img['shop_product_id']}|{img['image_url']}"
-            # Only keep the first occurrence (lowest image_id)
-            if key not in unique_images or img['image_id'] < unique_images[key]['image_id']:
-                unique_images[key] = img
-
-        deduped_images = list(unique_images.values())
-        logger.info(f"🧹 Deduplicated batch: {len(images)} → {len(deduped_images)} unique images")
-
+        
         try:
             table_id = f"{self.project_id}.{self.warehouse_dataset}.{self.table_name}"
-
-            # Configure load job
             job_config = bigquery.LoadJobConfig(
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-                schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
+                schema=[
+                    bigquery.SchemaField("image_id", "INTEGER", mode="REQUIRED"),
+                    bigquery.SchemaField("shop_product_id", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("image_url", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("sort_order", "INTEGER", mode="REQUIRED"),
+                    bigquery.SchemaField("scraped_date", "DATE", mode="REQUIRED"),
+                ]
             )
 
-            # Load data
-            logger.info(f"📤 Loading {len(deduped_images)} unique images to BigQuery...")
-            # Convert date to string for JSON serialization
-            for img in deduped_images:
-                if isinstance(img.get('scraped_date'), date):
-                    img['scraped_date'] = img['scraped_date'].isoformat()
-
-            load_job = self.client.load_table_from_json(
-                deduped_images,
-                table_id,
-                job_config=job_config
-            )
-
-            load_job.result()  # Wait for completion
+            logger.info(f"📤 Loading {len(images)} unique images to BigQuery...")
+            load_job = self.client.load_table_from_json(images, table_id, job_config=job_config)
+            load_job.result() 
 
             if load_job.errors:
                 logger.error(f"Load job errors: {load_job.errors}")
                 return False
 
-            logger.info(f"Successfully loaded {len(deduped_images)} images to {self.table_name}")
+            logger.info(f"Successfully loaded {len(images)} images to {self.table_name}")
             return True
 
         except Exception as e:
@@ -244,7 +246,7 @@ class DimProductImageTransformer:
             return False
     
     def transform_and_load(self, target_date: str = None):
-        """Run the complete DimProductImage transformation with daily processing logic"""
+        """Run the complete DimProductImage transformation"""
         if target_date is None:
             target_date = date.today().strftime("%Y-%m-%d")
         
@@ -253,71 +255,53 @@ class DimProductImageTransformer:
         print(f"🚀 Starting DimProductImage transformation for {target_date}")
         
         try:
-            # Get existing image keys to avoid duplicates
             print("🔍 Checking for existing images in BigQuery...")
             existing_keys = self.get_existing_image_ids()
-            
-            # Get next image_id
             starting_image_id = self.get_next_image_id()
             
-            # Discover staging tables
-            staging_tables = ['stg_raw_appleme', 'stg_raw_simplytek', 'stg_raw_onei_lk']
-            logger.info(f"Discovered {len(staging_tables)} staging tables: {staging_tables}")
+            # FIX 3: Calling the dynamic table discovery function
+            staging_tables = self.get_all_staging_tables()
             
-            all_images = []
-            all_failed = []
+            all_successful_images = []
+            all_failed_images = []
             
-            # Process each staging table
             for table_name in staging_tables:
                 print(f"\n📋 Processing {table_name}...")
                 
-                # Extract images from staging
                 raw_images = self.extract_images_from_staging(table_name, target_date)
                 
                 if raw_images:
-                    # Process images
-                    successful_images, failed_images = self.process_images_batch(
-                        raw_images, target_date_obj, starting_image_id + len(all_images)
+                    # The starting ID for this batch needs to account for images from previous tables
+                    batch_start_id = starting_image_id + len(all_successful_images)
+                    
+                    successful, failed = self.process_images_batch(
+                        raw_images, target_date_obj, batch_start_id
                     )
                     
-                    all_images.extend(successful_images)
-                    all_failed.extend(failed_images)
+                    all_successful_images.extend(successful)
+                    all_failed_images.extend(failed)
                     
-                    print(f"  ✅ Transformed {len(successful_images)} images")
+                    print(f"  ✅ Transformed {len(successful)} images")
                 else:
-                    print(f"  ⚠️ No images found")
+                    print(f"  ⚠️ No images found in this table for the target date")
             
-            # Deduplicate against existing data
-            if all_images:
-                print(f"\n🔄 Deduplicating {len(all_images)} images against existing data...")
-                new_images, duplicate_count = self.deduplicate_images(all_images, existing_keys)
+            if all_successful_images:
+                print(f"\n🔄 Deduplicating {len(all_successful_images)} total images against existing data...")
+                new_images, duplicate_count = self.deduplicate_images(all_successful_images, existing_keys)
                 
-                # Load new images only
                 if new_images:
                     success = self.load_images_to_bigquery(new_images)
                     if not success:
                         raise Exception("Failed to load images to BigQuery")
                 else:
-                    logger.info("✅ No new images to load - all images already exist in BigQuery")
-            else:
-                new_images = []
-                duplicate_count = 0
+                    logger.info("✅ No new unique images to load after deduplication.")
             
-            # Summary
-            print("✅ DimProductImage transformation completed successfully!")
+            print("\n✅ DimProductImage transformation completed successfully!")
             print("📊 SUMMARY:")
             print(f"  - Staging tables processed: {len(staging_tables)}")
-            print(f"  - Total images extracted: {len(all_images)}")
-            print(f"  - Existing images in BigQuery: {len(existing_keys)}")
-            print(f"  - New unique images loaded: {len(new_images) if new_images else 0}")
-            print(f"  - Failed images: {len(all_failed)}")
-            
-            if all_failed:
-                logger.warning(f"Failed to process {len(all_failed)} images")
-                for failed in all_failed[:5]:  # Show first 5
-                    logger.warning(f"  - {failed['error']}")
-            
-            logger.info("DimProductImage transformation completed successfully")
+            print(f"  - Total images transformed: {len(all_successful_images)}")
+            print(f"  - Failed to process: {len(all_failed_images)}")
+            print(f"  - New unique images loaded: {len(new_images) if 'new_images' in locals() else 0}")
             
         except Exception as e:
             logger.error(f"DimProductImage transformation failed: {e}")
@@ -327,7 +311,8 @@ def main():
     """Main execution function for DimProductImage transformation."""
     try:
         transformer = DimProductImageTransformer()
-        transformer.transform_and_load()
+        specific_date = date(2025, 9, 8).strftime("%Y-%m-%d")
+        transformer.transform_and_load(specific_date)
         
     except Exception as e:
         logger.error(f"DimProductImage transformation failed: {e}")

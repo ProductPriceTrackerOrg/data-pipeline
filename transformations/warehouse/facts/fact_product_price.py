@@ -1,229 +1,238 @@
+#!/usr/bin/env python3
 """
 FactProductPrice Loader Script
 Extracts daily price and availability for each product variant from BigQuery staging tables and loads to warehouse.
 """
-import json
 import hashlib
-from datetime import datetime
+import json
+import logging
+from datetime import datetime, date
+from typing import List, Dict, Optional
 from google.cloud import bigquery
-import os
 
-# Config
-PROJECT_ID = "price-pulse-470211"
-STAGING_DATASET = "staging"
-WAREHOUSE_DATASET = "warehouse"
-TABLE = "FactProductPrice"
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Staging tables to process
-STAGING_TABLES = [
-    "stg_raw_appleme",
-    "stg_raw_simplytek", 
-    "stg_raw_onei_lk"
-]
+class FactProductPriceLoader:
+    """
+    Handles the extraction, transformation, and loading of daily price facts.
+    """
+    def __init__(self):
+        self.client = bigquery.Client(project="price-pulse-470211")
+        self.project_id = "price-pulse-470211"
+        self.warehouse_dataset = "warehouse"
+        self.table_name = "FactProductPrice"
 
-# Helper functions
+    def get_all_staging_tables(self) -> List[str]:
+        """Dynamically discovers all staging tables."""
+        query = """
+        SELECT table_name
+        FROM `price-pulse-470211.staging.INFORMATION_SCHEMA.TABLES`
+        WHERE table_name LIKE 'stg_raw_%' AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+        """
+        try:
+            results = self.client.query(query).result()
+            tables = [row.table_name for row in results]
+            logger.info(f"Discovered {len(tables)} staging tables: {tables}")
+            return tables
+        except Exception as e:
+            logger.error(f"Failed to discover staging tables: {e}")
+            return []
 
-def get_variant_id(source_website, variant_id_native):
-    """Generate variant_id using MD5 hash"""
-    key = f"{source_website}|{variant_id_native}"
-    return int(hashlib.md5(key.encode('utf-8')).hexdigest(), 16) % (10**12)
+    def get_next_fact_id(self) -> int:
+        """Gets the next available price_fact_id from the warehouse table."""
+        query = f"""
+        SELECT COALESCE(MAX(price_fact_id), 0) + 1 as next_id
+        FROM `{self.project_id}.{self.warehouse_dataset}.{self.table_name}`
+        """
+        try:
+            result = list(self.client.query(query).result())
+            return result[0].next_id if result else 1
+        except Exception:
+            logger.warning(f"Could not read from {self.table_name}. Starting price_fact_id from 1.")
+            return 1
 
-def get_date_id(scrape_timestamp):
-    """Convert timestamp to YYYYMMDD format"""
-    dt = datetime.fromisoformat(scrape_timestamp[:10])
-    return int(dt.strftime("%Y%m%d"))
+    def generate_variant_id(self, source_website: str, product_id_native: str, variant_id_native: str) -> str:
+        """Generates the MD5 hash for the variant business key."""
+        business_key = f"{source_website}|{product_id_native}|{variant_id_native}"
+        return hashlib.md5(business_key.encode('utf-8')).hexdigest()
 
-def is_available(text):
-    """Check if product is available based on text"""
-    if not text:
+    def parse_price(self, price_str: str) -> Optional[float]:
+        """Cleans and converts a price string to a float."""
+        if not price_str:
+            return None
+        try:
+            # Remove currency symbols, commas, and strip whitespace
+            cleaned_str = str(price_str).replace('Rs.', '').replace('LKR', '').replace(',', '').strip()
+            return float(cleaned_str)
+        except (ValueError, TypeError):
+            return None
+
+    def is_available(self, text: str) -> bool:
+        """
+        Simplified availability check that prioritizes:
+        - 'out' words indicate unavailable (false)
+        - 'in' words indicate available (true)
+        
+        Args:
+            text: Availability text string
+            
+        Returns:
+            True if available, False otherwise
+        """
+        if not text:
+            return False
+            
+        # Convert to lowercase for case-insensitive matching
+        text_lower = text.lower()
+        
+        # First check for 'out' which indicates unavailable
+        if 'out' in text_lower:
+            return False
+            
+        # Then check for 'in' which indicates available
+        if 'in' in text_lower:
+            return True
+            
+        # Default to unavailable if neither pattern is found
         return False
-    text = text.lower()
-    return ("in stock" in text or "✓" in text) and "sold out" not in text
 
-def parse_price(price_str):
-    """Parse price string, handling commas and other formatting issues"""
-    if not price_str or price_str == '':
-        return None
-    
-    # Convert to string and clean it
-    price_str = str(price_str).strip()
-    
-    # Remove commas (thousands separators)
-    price_str = price_str.replace(',', '')
-    
-    # Remove any currency symbols
-    price_str = price_str.replace('LKR', '').replace('Rs', '').replace('$', '').strip()
-    
-    # Try to convert to float
-    try:
-        return float(price_str)
-    except (ValueError, TypeError):
-        return None
-
-def extract_from_staging_tables(client):
-    """Extract product data from BigQuery staging tables"""
-    all_products = []
-    
-    for table_name in STAGING_TABLES:
-        print(f"Extracting data from {table_name}...")
-        
-        # Query to extract product data from staging table
-        query = f"""
-        SELECT 
-            raw_json_data,
-            inserted_at,
-            table_name
-        FROM `{PROJECT_ID}.{STAGING_DATASET}.{table_name}`
-        WHERE raw_json_data IS NOT NULL
+    def extract_and_transform(self, target_date: str) -> List[Dict]:
         """
-        
-        try:
-            results = client.query(query).result()
-            
-            for row in results:
-                try:
-                    # Parse the JSON data
-                    product_data = json.loads(row.raw_json_data)
-                    
-                    # Add metadata if not present
-                    if 'metadata' not in product_data:
-                        product_data['metadata'] = {}
-                    
-                    # Ensure we have source_website and scrape_timestamp
-                    if 'source_website' not in product_data['metadata']:
-                        # Extract from table name (e.g., stg_raw_appleme -> appleme.lk)
-                        website = table_name.replace('stg_raw_', '') + '.lk'
-                        product_data['metadata']['source_website'] = website
-                    
-                    if 'scrape_timestamp' not in product_data['metadata']:
-                        # Use inserted_at as fallback
-                        product_data['metadata']['scrape_timestamp'] = row.inserted_at.isoformat()
-                    
-                    all_products.append(product_data)
-                    
-                except json.JSONDecodeError as e:
-                    print(f"Failed to parse JSON from {table_name}: {e}")
-                    continue
-                    
-            print(f"✓ Extracted {len([p for p in all_products if p.get('metadata', {}).get('source_website', '').startswith(table_name.replace('stg_raw_', ''))])} products from {table_name}")
-            
-        except Exception as e:
-            print(f"⚠ Error querying {table_name}: {e}")
-            continue
-    
-    print(f"📊 Total products extracted from staging: {len(all_products)}")
-    return all_products
-
-    # Get current max price_fact_id
-    if client:
-        query = f"""
-        SELECT COALESCE(MAX(price_fact_id), -1) + 1 AS next_id
-        FROM `{PROJECT_ID}.{DATASET}.{TABLE}`
+        Extracts price data from staging tables and transforms it for the fact table.
+        Now using the approach that worked for dim_shop_product.py
         """
-        try:
-            query_result = list(client.query(query).result())
-            next_id = query_result[0].next_id if query_result else 0
-        except Exception as e:
-            print(f"Warning: Could not query existing table, starting from 0: {e}")
-            next_id = 0
-    else:
-        print("No BigQuery client available, starting from 0")
-        next_id = 0
+        staging_tables = self.get_all_staging_tables()
+        if not staging_tables:
+            logger.warning("No staging tables found.")
+            return []
 
-    rows = []
-    skipped_products = 0
-    skipped_variants = 0
-    
-    for i, product in enumerate(products):
-        if not isinstance(product, dict):
-            print(f"Skipping product {i}: not a dictionary")
-            skipped_products += 1
-            continue
-            
-        metadata = product.get("metadata", {})
-        variants = product.get("variants", [])
-        source_website = metadata.get("source_website")
-        scrape_timestamp = metadata.get("scrape_timestamp")
+        logger.info(f"Executing transform query for date: {target_date}")
+        all_facts = []
+        next_id = self.get_next_fact_id()
 
-        if not source_website or not scrape_timestamp:
-            print(f"Skipping product {i}: missing metadata (source_website: {source_website}, scrape_timestamp: {scrape_timestamp})")
-            skipped_products += 1
-            continue
-
-        try:
-            date_id = get_date_id(scrape_timestamp)
-        except Exception as e:
-            print(f"Skipping product {i}: failed to parse scrape_timestamp '{scrape_timestamp}': {e}")
-            skipped_products += 1
-            continue
-
-        for j, variant in enumerate(variants):
-            if not isinstance(variant, dict):
-                print(f"Skipping variant {j} in product {i}: not a dictionary")
-                skipped_variants += 1
-                continue
-                
-            variant_id_native = variant.get("variant_id_native")
-            price_current = variant.get("price_current")
-            price_original = variant.get("price_original")
-            availability_text = variant.get("availability_text", "")
-
-            if not variant_id_native:
-                print(f"Skipping variant {j} in product {i}: missing variant_id_native")
-                skipped_variants += 1
-                continue
-
+        for table_name in staging_tables:
             try:
-                variant_id = get_variant_id(source_website, variant_id_native)
-                current_price = parse_price(price_current)
-                original_price = parse_price(price_original) if price_original else None
+                # Direct extraction of raw JSON data
+                query = f"""
+                SELECT 
+                    raw_json_data,
+                    source_website,
+                    scrape_date
+                FROM `{self.project_id}.staging.{table_name}`
+                WHERE scrape_date = '{target_date}'
+                """
                 
-                # Allow NULL prices instead of skipping
-                # Note: BigQuery will accept None as NULL
+                results = self.client.query(query).result()
+                table_facts_count = 0
                 
-                available = is_available(availability_text)
-
-                row = {
-                    "price_fact_id": next_id,
-                    "variant_id": variant_id,
-                    "date_id": date_id,
-                    "current_price": current_price,  # Can be None/NULL
-                    "original_price": original_price,
-                    "is_available": available
-                }
-                rows.append(row)
-                next_id += 1
+                for row in results:
+                    try:
+                        # Parse JSON data
+                        if isinstance(row.raw_json_data, str):
+                            json_data = json.loads(row.raw_json_data)
+                        else:
+                            json_data = row.raw_json_data
+                        
+                        # Handle JSON array of products (each row contains multiple products)
+                        products_to_process = json_data if isinstance(json_data, list) else [json_data]
+                        
+                        for product_data in products_to_process:
+                            # Basic validation
+                            product_id_native = product_data.get('product_id_native')
+                            if not product_id_native:
+                                continue
+                                
+                            # Process each variant for this product
+                            variants = product_data.get('variants', [])
+                            for variant in variants:
+                                variant_id_native = variant.get('variant_id_native')
+                                if not variant_id_native:
+                                    continue
+                                
+                                # Generate variant_id
+                                variant_id = self.generate_variant_id(
+                                    row.source_website,
+                                    product_id_native,
+                                    variant_id_native
+                                )
+                                
+                                # Convert date string to date_id (YYYYMMDD)
+                                date_id = int(row.scrape_date.strftime("%Y%m%d"))
+                                
+                                # Extract price and availability information
+                                price_current = self.parse_price(variant.get('price_current'))
+                                price_original = self.parse_price(variant.get('price_original'))
+                                is_available = self.is_available(variant.get('availability_text', ''))
+                                
+                                # Skip if no price information
+                                if price_current is None and price_original is None:
+                                    continue
+                                
+                                fact = {
+                                    "price_fact_id": next_id,
+                                    "variant_id": variant_id,
+                                    "date_id": date_id,
+                                    "current_price": price_current,
+                                    "original_price": price_original,
+                                    "is_available": is_available
+                                }
+                                all_facts.append(fact)
+                                table_facts_count += 1
+                                next_id += 1
+                                
+                    except Exception as e:
+                        logger.warning(f"Error processing product data: {e}")
+                        continue
+                
+                logger.info(f"Extracted {table_facts_count} facts from {table_name}")
+                
             except Exception as e:
-                print(f"Skipping variant {j} in product {i}: processing error: {e}")
-                skipped_variants += 1
-                continue
+                logger.error(f"Error querying {table_name}: {e}")
+        
+        logger.info(f"Successfully transformed {len(all_facts)} fact rows.")
+        return all_facts
 
-    print(f"\nExtraction Summary:")
-    print(f"  Total products processed: {len(products)}")
-    print(f"  Skipped products: {skipped_products}")
-    print(f"  Skipped variants: {skipped_variants}")
-    print(f"  Extracted {len(rows)} price fact rows.")
-    
-    if not rows:
-        print("No rows to load.")
-        return
+    def load_to_bigquery(self, rows: List[Dict]):
+        """Loads the transformed rows into the FactProductPrice table."""
+        if not rows:
+            logger.info("No new rows to load.")
+            return
 
-    # Load to BigQuery
-    if client and rows:
+        table_id = f"{self.project_id}.{self.warehouse_dataset}.{self.table_name}"
+        job_config = bigquery.LoadJobConfig(
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+            schema=[
+                bigquery.SchemaField("price_fact_id", "INTEGER", mode="REQUIRED"),
+                bigquery.SchemaField("variant_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("date_id", "INTEGER", mode="REQUIRED"),
+                # Changed from FLOAT to NUMERIC with precision and scale to match the existing schema
+                bigquery.SchemaField("current_price", "NUMERIC", mode="REQUIRED", precision=10, scale=2),
+                bigquery.SchemaField("original_price", "NUMERIC", mode="NULLABLE", precision=10, scale=2),
+                bigquery.SchemaField("is_available", "BOOLEAN", mode="REQUIRED"),
+            ]
+        )
+
         try:
-            table_id = f"{PROJECT_ID}.{DATASET}.{TABLE}"
-            job_config = bigquery.LoadJobConfig(
-                write_disposition=bigquery.WriteDisposition.WRITE_APPEND
-            )
-            job = client.load_table_from_json(rows, table_id, job_config=job_config)
+            logger.info(f"Loading {len(rows)} rows into {table_id}...")
+            job = self.client.load_table_from_json(rows, table_id, job_config=job_config)
             job.result()
-            print(f"Successfully loaded {len(rows)} rows to {table_id}.")
+            logger.info("Load job completed successfully.")
         except Exception as e:
-            print(f"Failed to load to BigQuery: {e}")
-    elif not client:
-        print("No BigQuery client available - skipping data load")
-    else:
-        print("No rows to load to BigQuery")
+            logger.error(f"Failed to load data to BigQuery: {e}")
+            raise
+
+def main():
+    """Main execution function."""
+    loader = FactProductPriceLoader()
+    
+    # You can specify a date here, or it will default to today
+    target_date = date(2025, 9, 8).strftime("%Y-%m-%d")
+    
+    transformed_rows = loader.extract_and_transform(target_date)
+    loader.load_to_bigquery(transformed_rows)
 
 if __name__ == "__main__":
     main()

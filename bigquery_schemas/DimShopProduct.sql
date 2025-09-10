@@ -2,7 +2,7 @@
 -- Stores each unique product listing exactly as it appears on the retailer's site.
 
 CREATE TABLE IF NOT EXISTS `price-pulse-470211.warehouse.DimShopProduct` (
-  shop_product_id STRING NOT NULL,              -- MD5 hash of business key (source_website|product_id_native)
+  shop_product_id INT64 NOT NULL,              -- MD5 hash of business key (source_website|product_id_native)
   shop_id INT64 NOT NULL,                       -- Foreign key to DimShop
   product_title_native STRING NOT NULL,         -- Product title as it appears on shop (max 500 chars)
   brand_native STRING,                          -- Brand name as it appears on shop

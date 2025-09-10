@@ -3,12 +3,12 @@
 FactProductPrice Loader Script
 Extracts daily price and availability for each product variant from BigQuery staging tables and loads to warehouse.
 """
-import hashlib
 import json
 import logging
 from datetime import datetime, date
 from typing import List, Dict, Optional
 from google.cloud import bigquery
+import xxhash
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -54,10 +54,10 @@ class FactProductPriceLoader:
             logger.warning(f"Could not read from {self.table_name}. Starting price_fact_id from 1.")
             return 1
 
-    def generate_variant_id(self, source_website: str, product_id_native: str, variant_id_native: str) -> str:
-        """Generates the MD5 hash for the variant business key."""
+    def generate_variant_id(self, source_website: str, product_id_native: str, variant_id_native: str) -> int:
+        """Generates the xxhash 32-bit integer for the variant business key."""
         business_key = f"{source_website}|{product_id_native}|{variant_id_native}"
-        return hashlib.md5(business_key.encode('utf-8')).hexdigest()
+        return xxhash.xxh32(business_key.encode('utf-8')).intdigest()
 
     def parse_price(self, price_str: str) -> Optional[float]:
         """Cleans and converts a price string to a float."""
@@ -206,11 +206,11 @@ class FactProductPriceLoader:
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             schema=[
                 bigquery.SchemaField("price_fact_id", "INTEGER", mode="REQUIRED"),
-                bigquery.SchemaField("variant_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("variant_id", "INTEGER", mode="REQUIRED"),  # xxhash 32-bit integer
                 bigquery.SchemaField("date_id", "INTEGER", mode="REQUIRED"),
                 # Changed from FLOAT to NUMERIC with precision and scale to match the existing schema
-                bigquery.SchemaField("current_price", "NUMERIC", mode="REQUIRED", precision=10, scale=2),
-                bigquery.SchemaField("original_price", "NUMERIC", mode="NULLABLE", precision=10, scale=2),
+                bigquery.SchemaField("current_price", "FLOAT", mode="REQUIRED", precision=10, scale=2),
+                bigquery.SchemaField("original_price", "FLOAT", mode="NULLABLE", precision=10, scale=2),
                 bigquery.SchemaField("is_available", "BOOLEAN", mode="REQUIRED"),
             ]
         )

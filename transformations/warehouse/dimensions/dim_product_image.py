@@ -4,13 +4,13 @@ Extracts and transforms product images from staging to warehouse with robust dai
 Includes duplicate prevention and proper sort order handling.
 """
 
-import hashlib
 import json
 import logging
 from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
 from google.cloud import bigquery
 from pydantic import BaseModel, ValidationError
+import xxhash  # Add xxhash import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class ProductImageModel(BaseModel):
     """Validated model for DimProductImage warehouse table."""
     image_id: int
-    shop_product_id: str  # MD5 hash
+    shop_product_id: int  # xxhash 32-bit integer
     image_url: str
     sort_order: int
     scraped_date: date
@@ -38,11 +38,12 @@ class DimProductImageTransformer:
         self.warehouse_dataset = "warehouse"
         self.table_name = "DimProductImage"
         
-    def generate_shop_product_id(self, source_website: str, product_id_native: str) -> str:
-        """Generate deterministic shop_product_id using MD5 hash"""
+    def generate_shop_product_id(self, source_website: str, product_id_native: str) -> int:
+        """Generate deterministic shop_product_id using xxhash 32-bit integer"""
         business_key = f"{source_website}|{product_id_native}"
-        md5_hash = hashlib.md5(business_key.encode('utf-8')).hexdigest()
-        return md5_hash
+        # Generate xxhash and return as integer
+        hash_id = xxhash.xxh32(business_key.encode('utf-8')).intdigest()
+        return hash_id
     
     # FIX 1: Added dynamic table discovery function
     def get_all_staging_tables(self) -> List[str]:
@@ -63,7 +64,7 @@ class DimProductImageTransformer:
     def get_existing_image_ids(self) -> set:
         """Get existing image_ids to avoid duplicates"""
         query = f"""
-        SELECT DISTINCT CONCAT(shop_product_id, '|', image_url) as image_key
+        SELECT DISTINCT CONCAT(CAST(shop_product_id AS STRING), '|', image_url) as image_key
         FROM `{self.project_id}.{self.warehouse_dataset}.{self.table_name}`
         """
         
@@ -195,6 +196,7 @@ class DimProductImageTransformer:
         duplicate_count = 0
         
         for image in images:
+            # Convert shop_product_id to string for consistent key generation
             image_key = f"{image['shop_product_id']}|{image['image_url']}"
             
             if image_key not in existing_keys:
@@ -223,7 +225,7 @@ class DimProductImageTransformer:
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                 schema=[
                     bigquery.SchemaField("image_id", "INTEGER", mode="REQUIRED"),
-                    bigquery.SchemaField("shop_product_id", "STRING", mode="REQUIRED"),
+                    bigquery.SchemaField("shop_product_id", "INTEGER", mode="REQUIRED"),  # xxhash 32-bit integer
                     bigquery.SchemaField("image_url", "STRING", mode="REQUIRED"),
                     bigquery.SchemaField("sort_order", "INTEGER", mode="REQUIRED"),
                     bigquery.SchemaField("scraped_date", "DATE", mode="REQUIRED"),

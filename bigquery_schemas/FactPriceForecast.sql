@@ -6,9 +6,9 @@ CREATE TABLE IF NOT EXISTS `price-pulse-470211.warehouse.FactPriceForecast` (
   variant_id INT64 NOT NULL,                  -- References DimVariant.variant_id (not enforced)
   model_id INT64 NOT NULL,                    -- References DimModel.model_id (not enforced)
   forecast_date DATE NOT NULL,                -- Date for which the price is forecasted
-  predicted_price NUMERIC(10,2),              -- Predicted price for the variant
-  confidence_upper NUMERIC(10,2),             -- Upper confidence bound
-  confidence_lower NUMERIC(10,2),             -- Lower confidence bound
+  predicted_price FLOAT64,              -- Predicted price for the variant
+  confidence_upper FLOAT64,             -- Upper confidence bound
+  confidence_lower FLOAT64,             -- Lower confidence bound
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- Timestamp when the forecast was created
 )
 OPTIONS(

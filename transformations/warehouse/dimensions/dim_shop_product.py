@@ -41,7 +41,7 @@ class RawProductData(BaseModel):
 
 class ShopProductModel(BaseModel):
     """Validated model for DimShopProduct warehouse table."""
-    shop_product_id: str  # MD5 hash string
+    shop_product_id: int  # 32-bit integer from xxhash
     shop_id: int
     product_title_native: str = Field(..., max_length=500)
     brand_native: Optional[str] = Field(None, max_length=100)
@@ -211,26 +211,27 @@ class DimShopProductTransformer(TransformationBase):
             logger.error(f"Failed to build shop lookup: {e}")
             return {}
     
-    def generate_shop_product_id(self, source_website: str, product_id_native: str) -> str:
+    def generate_shop_product_id(self, source_website: str, product_id_native: str) -> int:
         """
-        Generate a unique, deterministic shop_product_id using MD5 hash of business key.
+        Generate a unique, deterministic shop_product_id using xxhash of business key.
         
         Args:
             source_website: Source website name
             product_id_native: Native product ID from the website
             
         Returns:
-            Hexadecimal string representing the shop_product_id
+            32-bit integer representing the shop_product_id
         """
-        import hashlib
+        import xxhash
         
-        # Create business key: source_website|product_id_native
+        # Create business key: source_website|product_id_native (unchanged)
         business_key = f"{source_website}|{product_id_native}"
         
-        # Generate MD5 hash and convert to hex
-        md5_hash = hashlib.md5(business_key.encode('utf-8')).hexdigest()
+        # Generate xxhash and return as integer
+        # xxh32 creates a 32-bit hash that fits in INT64
+        hash_id = xxhash.xxh32(business_key.encode('utf-8')).intdigest()
         
-        return md5_hash
+        return hash_id
     
     def get_all_staging_tables(self) -> List[str]:
         """
@@ -488,7 +489,7 @@ class DimShopProductTransformer(TransformationBase):
             job_config = bigquery.LoadJobConfig(
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                 schema=[
-                    bigquery.SchemaField("shop_product_id", "STRING", mode="REQUIRED"),  # MD5 hash
+                    bigquery.SchemaField("shop_product_id", "INTEGER", mode="REQUIRED"),  # xxhash 32-bit integer
                     bigquery.SchemaField("shop_id", "INTEGER", mode="REQUIRED"),
                     bigquery.SchemaField("product_title_native", "STRING", mode="REQUIRED"),
                     bigquery.SchemaField("brand_native", "STRING", mode="NULLABLE"),
@@ -524,7 +525,7 @@ class DimShopProductTransformer(TransformationBase):
         
         try:
             # Get all shop_product_ids from this batch
-            shop_product_ids = [f"'{product['shop_product_id']}'" for product in all_products]
+            shop_product_ids = [str(product['shop_product_id']) for product in all_products]
             
             # Process in batches to avoid query limits
             batch_size = 1000

@@ -3,10 +3,10 @@
 
 CREATE TABLE IF NOT EXISTS `price-pulse-470211.warehouse.FactProductPrice` (
   price_fact_id INT64 NOT NULL,                -- Surrogate key for the price record
-  variant_id STRING NOT NULL,                   -- References DimVariant.variant_id (not enforced)
+  variant_id INT64 NOT NULL,                   -- References DimVariant.variant_id (not enforced)
   date_id INT64 NOT NULL,                      -- References DimDate.date_id (not enforced)
-  current_price NUMERIC(10,2) NOT NULL,        -- Current price of the product
-  original_price NUMERIC(10,2),                -- Original price (if available)
+  current_price FLOAT64 NOT NULL,        -- Current price of the product
+  original_price FLOAT64,                -- Original price (if available)
   is_available BOOL NOT NULL                   -- Availability status (true/false)
 )
 OPTIONS(

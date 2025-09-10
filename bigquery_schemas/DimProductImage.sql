@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS `price-pulse-470211.warehouse.DimProductImage` (
   image_id INT64 NOT NULL,                  -- Surrogate key for the image
-  shop_product_id STRING NOT NULL,          -- Foreign key to DimShopProduct (MD5 hash)
+  shop_product_id INT64 NOT NULL,          -- Foreign key to DimShopProduct (MD5 hash)
   image_url STRING NOT NULL,                -- URL to the product image (max 1024 chars)
   sort_order INT64,                         -- Display order of the image (1 = primary)
   scraped_date DATE                         -- Date when this image was scraped

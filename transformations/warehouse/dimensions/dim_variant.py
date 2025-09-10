@@ -8,17 +8,17 @@ For each variant, it finds the corresponding shop_product_id by matching the bus
 Business Logic:
 - Each variant belongs to a shop product
 - shop_product_id is found by matching source_website + product_id_native
-- variant_id is generated using MD5 hash of shop_product_id + variant_id_native
+- variant_id is generated using xxHash32 of shop_product_id + variant_id_native
 - Handles multiple variants per product
 - Prevents duplicates by checking existing variants in BigQuery
 """
 
-import hashlib
 import json
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
 from google.cloud import bigquery
+import xxhash  # Make sure xxhash is imported
 
 logging.basicConfig(level=logging.INFO)
 
@@ -27,15 +27,17 @@ class DimVariantTransformation:
         self.client = bigquery.Client()
         self.project_id = "price-pulse-470211"
     
-    def generate_shop_product_id(self, source_website: str, product_id_native: str) -> str:
-        """Generate MD5-based shop_product_id"""
+    def generate_shop_product_id(self, source_website: str, product_id_native: str) -> int:
+        """Generate xxhash-based shop_product_id as 32-bit integer"""
+        import xxhash
         business_key = f"{source_website}|{product_id_native}"
-        return hashlib.md5(business_key.encode('utf-8')).hexdigest()
+        return xxhash.xxh32(business_key.encode('utf-8')).intdigest()
     
-    def generate_variant_id(self, source_website: str, product_id_native: str, variant_id_native: str) -> str:
-        """Generate MD5-based variant_id"""
+    def generate_variant_id(self, source_website: str, product_id_native: str, variant_id_native: str) -> int:
+        """Generate xxhash-based variant_id as 32-bit integer"""
+        import xxhash
         business_key = f"{source_website}|{product_id_native}|{variant_id_native}"
-        return hashlib.md5(business_key.encode('utf-8')).hexdigest()
+        return xxhash.xxh32(business_key.encode('utf-8')).intdigest()
     
     def get_all_staging_tables(self) -> List[str]:
         """Get all staging tables that contain product data"""
@@ -188,7 +190,12 @@ class DimVariantTransformation:
         
         job_config = bigquery.LoadJobConfig(
             write_disposition="WRITE_APPEND",
-            schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
+            schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
+            schema=[
+                bigquery.SchemaField("variant_id", "INTEGER", mode="REQUIRED"),  # xxhash 32-bit integer
+                bigquery.SchemaField("shop_product_id", "INTEGER", mode="REQUIRED"),  # xxhash 32-bit integer
+                bigquery.SchemaField("variant_title", "STRING", mode="REQUIRED")
+            ]
         )
         
         try:

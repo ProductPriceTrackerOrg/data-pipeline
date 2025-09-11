@@ -14,29 +14,7 @@ import logging
 import sys
 import os
 import json
-from datetime import datetime
-from dotenv import load_dotenv
-
-# Load environment variables from the global .env file
-global_env_path = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
-load_dotenv(global_env_path)
-
-# Add current directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Azure Storage imports
-from azure.storage.blob import BlobServiceClient
-
-# Import scraper
-from scripts.product_scraper_manager import run_scraper
-
-import nest_asyncio
-import asyncio
-import logging
-import sys
-import os
-import json
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # Load environment variables from the global .env file (go up 3 levels to data-pipeline root)
@@ -79,7 +57,7 @@ def upload_to_adls(json_data: str, source_website: str):
         raise ValueError("Azure connection string not found in environment variables.")
 
     # --- 2. Define the partitioned path ---
-    scrape_date = datetime.now().strftime('%Y-%m-%d')
+    scrape_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     file_path = f"source_website={source_website}/scrape_date={scrape_date}/data.json"
     container_name = "raw-data"
 
@@ -105,7 +83,7 @@ async def main():
     """Main entry point - scrape all products and save as JSON"""
     print_banner()
     print("Starting CyberDeals product scraping...")
-    print(f"Scraping started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Scraping started at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
     
     try:
         # Apply nest_asyncio to make asyncio work in Jupyter

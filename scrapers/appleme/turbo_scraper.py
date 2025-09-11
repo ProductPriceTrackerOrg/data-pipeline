@@ -8,7 +8,7 @@ import os
 import json
 import logging
 from typing import Dict, List
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -33,7 +33,7 @@ class HighPerformanceScraper(AppleMeScraper):
     
     async def run_turbo_scrape(self):
         """Run high-performance scraping with real-time optimization"""
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
         self.logger.info("Starting TURBO scraping mode...")
         self.logger.info("Optimizations: Aggressive concurrency, minimal delays, adaptive batching")
         
@@ -74,7 +74,7 @@ class HighPerformanceScraper(AppleMeScraper):
             )
             
             # Step 4: Generate results
-            end_time = datetime.now()
+            end_time = datetime.now(timezone.utc)
             duration = end_time - self.start_time
             
             result = ScrapingResultModel(
@@ -169,7 +169,7 @@ class HighPerformanceScraper(AppleMeScraper):
                 await asyncio.sleep(30)  # Report every 30 seconds
                 current_time = time.time()
                 if hasattr(self, 'start_time'):
-                    elapsed = (datetime.now() - self.start_time).total_seconds()
+                    elapsed = (datetime.now(timezone.utc) - self.start_time).total_seconds()
                     self.logger.info(f"Runtime: {elapsed/60:.1f}min | Performance monitoring active...")
         
         # Start background monitoring
@@ -190,7 +190,8 @@ class HighPerformanceScraper(AppleMeScraper):
             return False
 
         # --- 2. Define the partitioned path ---
-        scrape_date = datetime.now().strftime('%Y-%m-%d')
+        utc_now = datetime.now(timezone.utc)
+        scrape_date = utc_now.strftime('%Y-%m-%d')
         file_path = f"source_website={source_website}/scrape_date={scrape_date}/data.json"
         container_name = "raw-data"
 
@@ -266,7 +267,7 @@ async def run_turbo_complete_scrape():
         print(f"Products Scraped: {result.successful_scrapes:,}/{result.total_products:,}")
         print(f"Categories: {result.categories_processed}")
         print(f"Saved to: scraped_data/appleme_products.json")
-        print(f"Uploaded to: ADLS raw-data/source_website=appleme/scrape_date={datetime.now().strftime('%Y-%m-%d')}/data.json")
+        print(f"Uploaded to: ADLS raw-data/source_website=appleme/scrape_date={datetime.now(timezone.utc).strftime('%Y-%m-%d')}/data.json")
         
         if products_per_minute > 300:
             print("EXCELLENT PERFORMANCE! You're in the top speed tier!")

@@ -13,7 +13,7 @@ import logging
 import sys
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 
@@ -54,7 +54,8 @@ def upload_to_adls(json_data: str, source_website: str):
         raise ValueError("Azure connection string not found in environment variables.")
 
     # --- 2. Define the partitioned path ---
-    scrape_date = datetime.now().strftime('%Y-%m-%d')
+    utc_now = datetime.now(timezone.utc)
+    scrape_date = utc_now.strftime('%Y-%m-%d')
     file_path = f"source_website={source_website}/scrape_date={scrape_date}/data.json"
     container_name = "raw-data"
 
@@ -98,7 +99,7 @@ async def main():
     """Main entry point - scrape all products and save as JSON"""
     print_banner()
     print("Starting SimplyTek product scraping...")
-    print(f"Scraping started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Scraping started at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
         # Setup environment (logging, directories, etc.)

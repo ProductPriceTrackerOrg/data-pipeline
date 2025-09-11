@@ -5,7 +5,7 @@ import asyncio
 import logging
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 from scrapy.crawler import CrawlerProcess
@@ -26,7 +26,7 @@ class LifeMobileScrapingManager:
         self.output_file = output_file
         self.save_locally = save_locally
         self.config = LifeMobileConfig()
-        self.stats = LifeMobileScrapeStats(start_time=datetime.now())
+        self.stats = LifeMobileScrapeStats(start_time=datetime.now(timezone.utc))
         
     def run_scraper(self) -> bool:
         """Run the Scrapy spider"""

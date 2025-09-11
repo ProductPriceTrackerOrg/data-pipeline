@@ -4,7 +4,7 @@ Product scraping manager for orchestrating the scraping process
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 from scripts.product_scraper_core import ProductScraper
@@ -38,7 +38,7 @@ class ScrapingManager:
             ScrapingResult with all scraped data and metadata
         """
         self.logger.info("=== Starting SimplyTek Product Scraping ===")
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         
         try:
             # Create backup of existing data if it exists and we're saving locally
@@ -54,7 +54,7 @@ class ScrapingManager:
                 await self._save_results(result)
             
             # Log summary
-            end_time = datetime.now()
+            end_time = datetime.now(timezone.utc)
             duration = end_time - start_time
             
             self.logger.info("=== Scraping Completed Successfully ===")

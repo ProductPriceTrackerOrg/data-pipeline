@@ -10,7 +10,7 @@ import logging
 import sys
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -86,7 +86,8 @@ def upload_to_adls(json_data: str, source_website: str):
         return False
 
     # Define the partitioned path
-    scrape_date = datetime.now().strftime('%Y-%m-%d')
+    utc_now = datetime.now(timezone.utc)
+    scrape_date = utc_now.strftime('%Y-%m-%d')
     file_path = f"source_website={source_website}/scrape_date={scrape_date}/data.json"
     container_name = "raw-data"
 
@@ -223,7 +224,7 @@ def main():
     """Main entry point - scrape fresh products and upload to Azure"""
     print_banner()
     print("Starting LifeMobile fresh data pipeline...")
-    print(f"Pipeline started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Pipeline started at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}")
 
     try:
         # Setup environment and logging
@@ -244,7 +245,7 @@ def main():
         
         # Step 1: Run fresh scraping
         print("\nStep 1: Scraping fresh products from LifeMobile.lk...")
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         
         manager = LifeMobileScrapingManager()
         scraping_success = manager.run_scraper()
@@ -253,7 +254,7 @@ def main():
             print("Scraping failed!")
             return 1
         
-        scraping_duration = (datetime.now() - start_time).total_seconds()
+        scraping_duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         print(f"Scraping completed in {scraping_duration:.2f} seconds")
 
         # Step 2: Load scraped products and remove JSON file immediately
@@ -336,7 +337,7 @@ def main():
                     print(f"Products uploaded: {total_products:,}")
                     print(f"Variants uploaded: {total_variants:,}")
                     print(f"Data size: {len(json_data) / (1024*1024):.2f} MB")
-                    print(f"Total time: {(datetime.now() - start_time).total_seconds():.2f} seconds")
+                    print(f"Total time: {(datetime.now(timezone.utc) - start_time).total_seconds():.2f} seconds")
                 else:
                     print("Failed to upload data to ADLS")
                     

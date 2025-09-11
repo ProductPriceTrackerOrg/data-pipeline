@@ -4,7 +4,7 @@ Core scraping logic for LifeMobile
 import scrapy
 from scrapy.http import Request
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import random
 import time
@@ -28,7 +28,7 @@ class LifeMobileSpider(scrapy.Spider):
         super().__init__(*args, **kwargs)
         self.config = LifeMobileConfig()
         self.products_collected = 0
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
         self.category_urls: Set[str] = set()
         self.product_urls: Set[str] = set()
         self.error_count = 0
@@ -59,7 +59,7 @@ class LifeMobileSpider(scrapy.Spider):
     def parse_homepage(self, response):
         """Parse homepage to find category links"""
         # Check if we've exceeded maximum runtime
-        if (datetime.now() - self.start_time).total_seconds() > self.config.MAX_RUNTIME:
+        if (datetime.now(timezone.utc) - self.start_time).total_seconds() > self.config.MAX_RUNTIME:
             self.crawler.engine.close_spider(self, 'timeout')
             return
             
@@ -85,7 +85,7 @@ class LifeMobileSpider(scrapy.Spider):
     def parse_category(self, response):
         """Parse category pages to find products and subcategories"""
         # Check runtime and product limits
-        if (datetime.now() - self.start_time).total_seconds() > self.config.MAX_RUNTIME:
+        if (datetime.now(timezone.utc) - self.start_time).total_seconds() > self.config.MAX_RUNTIME:
             self.crawler.engine.close_spider(self, 'timeout')
             return
             
@@ -157,7 +157,7 @@ class LifeMobileSpider(scrapy.Spider):
     def parse_product(self, response):
         """Parse individual product pages"""
         # Check runtime and product limits
-        if (datetime.now() - self.start_time).total_seconds() > self.config.MAX_RUNTIME:
+        if (datetime.now(timezone.utc) - self.start_time).total_seconds() > self.config.MAX_RUNTIME:
             self.crawler.engine.close_spider(self, 'timeout')
             return
             
@@ -237,7 +237,7 @@ class LifeMobileSpider(scrapy.Spider):
 
             # Log progress
             if self.products_collected % 50 == 0:
-                elapsed = datetime.now() - self.start_time
+                elapsed = datetime.now(timezone.utc) - self.start_time
                 rate = self.products_collected / elapsed.total_seconds()
                 logger.info(
                     f"Progress: {self.products_collected} products | {rate:.2f} products/sec | Errors: {self.error_count}"
@@ -374,7 +374,7 @@ class LifeMobileSpider(scrapy.Spider):
 
     def closed(self, reason):
         """Called when spider closes"""
-        elapsed = datetime.now() - self.start_time
+        elapsed = datetime.now(timezone.utc) - self.start_time
         rate = self.products_collected / elapsed.total_seconds() if elapsed.total_seconds() > 0 else 0
         
         logger.info(f"Finished scraping. Total products: {self.products_collected}")

@@ -3,7 +3,7 @@ Main scraper application that orchestrates the entire scraping process
 """
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 from models.product_models import ScrapingResultModel
@@ -27,7 +27,7 @@ class AppleMeScraper:
     
     async def run_full_scrape(self) -> ScrapingResultModel:
         """Run the complete scraping process"""
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         self.logger.info("Starting AppleMe.lk scraping process...")
         
         async with AsyncRequestManager() as request_manager:
@@ -60,7 +60,7 @@ class AppleMeScraper:
             )
             
             # Step 4: Save results
-            end_time = datetime.now()
+            end_time = datetime.now(timezone.utc)
             
             result = ScrapingResultModel(
                 total_products=len(all_products_info),
@@ -79,7 +79,7 @@ class AppleMeScraper:
     
     async def run_category_scrape(self, category_names: List[str]) -> ScrapingResultModel:
         """Run scraping for specific categories only"""
-        start_time = datetime.now()
+        start_time = datetime.now(timezone.utc)
         self.logger.info(f"Starting targeted scraping for categories: {category_names}")
         
         async with AsyncRequestManager() as request_manager:
@@ -117,7 +117,7 @@ class AppleMeScraper:
             )
             
             # Create result
-            end_time = datetime.now()
+            end_time = datetime.now(timezone.utc)
             result = ScrapingResultModel(
                 total_products=len(all_products_info),
                 successful_scrapes=len(successful_products),
@@ -163,7 +163,7 @@ class AppleMeScraper:
             failed_data = {
                 'failed_count': len(failed_products),
                 'products': failed_products,
-                'scrape_timestamp': datetime.now().isoformat()
+                'scrape_timestamp': datetime.now(timezone.utc).isoformat()
             }
             
             if self.utils.save_json(failed_data, failed_file):
@@ -177,7 +177,7 @@ class AppleMeScraper:
             failed_scrapes=0,
             categories_processed=0,
             start_time=start_time,
-            end_time=datetime.now(),
+            end_time=datetime.now(timezone.utc),
             products=[]
         )
     

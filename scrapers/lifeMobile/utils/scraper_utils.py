@@ -4,7 +4,7 @@ Utility functions for LifeMobile scraper
 import logging
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import urllib.parse
@@ -227,7 +227,7 @@ def ensure_directory(path: str) -> bool:
 
 def timestamp_filename(base_name: str, extension: str = ".json") -> str:
     """Add timestamp to filename"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     name_part = Path(base_name).stem
     return f"{name_part}_{timestamp}{extension}"
 
@@ -278,7 +278,7 @@ class ScrapingStats:
     """Helper class for tracking scraping statistics"""
     
     def __init__(self):
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
         self.end_time = None
         self.products_scraped = 0
         self.errors_encountered = 0
@@ -286,7 +286,7 @@ class ScrapingStats:
         
     def finish(self):
         """Mark scraping as finished"""
-        self.end_time = datetime.now()
+        self.end_time = datetime.now(timezone.utc)
     
     @property
     def duration(self) -> Optional[float]:

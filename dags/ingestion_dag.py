@@ -7,8 +7,8 @@ from airflow.operators.bash import BashOperator
 
 with DAG(
     dag_id="daily_data_ingestion",
-    start_date=pendulum.datetime(2025, 8, 22, tz="Asia/Colombo"),
-    schedule_interval="@daily",
+    start_date=pendulum.datetime(2025, 9, 11, tz="UTC"),
+    schedule="0 1 * * *",  # This is the key part
     catchup=False,
     doc_md="""
     ## Daily Data Ingestion DAG

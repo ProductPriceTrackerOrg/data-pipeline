@@ -3,7 +3,7 @@ Pydantic models for Onei.lk product data validation and schema enforcement
 """
 from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 
 class ProductVariant(BaseModel):
     variant_id_native: str = Field(..., description="Native variant ID from the source")
@@ -23,7 +23,7 @@ class ProductMetadata(BaseModel):
     source_website: str = Field(..., description="Source website URL")
     shop_contact_phone: Optional[str] = Field(None, description="Shop contact phone number")
     shop_contact_whatsapp: Optional[str] = Field(None, description="Shop WhatsApp contact")
-    scrape_timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp when data was scraped")
+    scrape_timestamp: datetime = Field(default_factory=datetime.now(timezone.utc), description="Timestamp when data was scraped")
 
     class Config:
         json_encoders = {

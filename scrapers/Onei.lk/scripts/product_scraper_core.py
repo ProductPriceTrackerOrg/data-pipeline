@@ -5,7 +5,7 @@ Core product scraping implementation for Onei.lk
 import scrapy
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from scrapy.http import Request
 
 # Configure logging directly here to avoid import issues
@@ -47,7 +47,7 @@ class One1LKSpider(scrapy.Spider):
 
     def __init__(self):
         self.products_collected = 0
-        self.start_time = datetime.now()
+        self.start_time = datetime.now(timezone.utc)
         self.category_urls = set()
         self.product_urls = set()
         self.error_count = 0
@@ -219,7 +219,7 @@ class One1LKSpider(scrapy.Spider):
                 "source_website": "https://onei.lk",
                 "shop_contact_phone": "+94770176666",
                 "shop_contact_whatsapp": "+94770176666",
-                "scrape_timestamp": datetime.now().isoformat(),
+                "scrape_timestamp": datetime.now(timezone.utc).isoformat(),
             },
         }
 
@@ -227,7 +227,7 @@ class One1LKSpider(scrapy.Spider):
         self.request_count += 1
 
         if self.products_collected % 50 == 0:
-            elapsed = datetime.now() - self.start_time
+            elapsed = datetime.now(timezone.utc) - self.start_time
             rate = self.products_collected / elapsed.total_seconds()
             logger.info(
                 f"Progress: {self.products_collected} products | {rate:.2f} products/sec | Errors: {self.error_count}"
@@ -250,7 +250,7 @@ class One1LKSpider(scrapy.Spider):
             )
 
     def closed(self, reason):
-        elapsed = datetime.now() - self.start_time
+        elapsed = datetime.now(timezone.utc) - self.start_time
         rate = self.products_collected / elapsed.total_seconds()
         success_rate = (
             (self.products_collected / self.request_count) * 100

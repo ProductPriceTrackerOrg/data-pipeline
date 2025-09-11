@@ -3,7 +3,7 @@ Utility functions for Onei.lk scraper
 """
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 def get_logger(name):
     """
@@ -38,4 +38,4 @@ def format_timestamp():
     Returns:
         Formatted timestamp string
     """
-    return datetime.now().strftime('%Y%m%d_%H%M%S')
+    return datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')

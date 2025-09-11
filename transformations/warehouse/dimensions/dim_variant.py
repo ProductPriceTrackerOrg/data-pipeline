@@ -15,7 +15,7 @@ Business Logic:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, date, timezone
 from typing import List, Dict, Any
 from google.cloud import bigquery
 import xxhash  # Make sure xxhash is imported
@@ -130,7 +130,7 @@ class DimVariantTransformation:
             'variant_title': variant_data.get('variant_title', '').strip()
         }
     
-    def get_existing_variant_ids(self, target_date: str = None) -> set:
+    def get_existing_variant_ids(self) -> set:
         """Get all existing variant_ids from DimVariant table to avoid duplicates"""
         try:
             # Get all existing variant_ids - we don't filter by date since variant_id should be globally unique
@@ -212,14 +212,13 @@ class DimVariantTransformation:
     def transform_and_load(self, target_date: str = None):
         """Run the complete DimVariant transformation"""
         if target_date is None:
-            from datetime import date
-            target_date = date.today().strftime("%Y-%m-%d")
+            target_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         
         print(f"🚀 Starting DimVariant transformation for {target_date}")
         
         # First, get existing variant_ids to avoid duplicates
         print("🔍 Checking for existing variants in BigQuery...")
-        existing_variant_ids = self.get_existing_variant_ids(target_date)
+        existing_variant_ids = self.get_existing_variant_ids()
         
         # Get all staging tables
         staging_tables = self.get_all_staging_tables()
@@ -274,12 +273,9 @@ class DimVariantTransformation:
 def main():
     """Main execution function"""
     transformer = DimVariantTransformation()
-    # Use today's date by default (will auto-detect current date)
-    # Define the date you want to pass as a string
-    # my_date_string = "2025-09-08"
-    from datetime import date
-    my_date_string = date(2025, 9, 8).strftime("%Y-%m-%d")
-    success = transformer.transform_and_load(my_date_string)
+    # By calling transform_and_load without a date, it will automatically
+    # use the current UTC date as per the logic inside the function.
+    success = transformer.transform_and_load()
     
     if success:
         logging.info("DimVariant transformation completed successfully")

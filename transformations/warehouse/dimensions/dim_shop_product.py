@@ -11,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 import json
 import re
 import html
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import List, Dict, Optional, Tuple
 import logging
 from bs4 import BeautifulSoup
@@ -87,7 +87,7 @@ class ShopProductModel(BaseModel):
                 return cleaned[:2000]
         except Exception as e:
             logger.debug(f"Primary HTML cleaning failed: {e}")
-        
+    
         try:
             # Fallback: basic regex cleaning
             cleaned = re.sub(r'<[^>]+>', '', str(v))
@@ -97,7 +97,7 @@ class ShopProductModel(BaseModel):
                 return cleaned[:2000]
         except Exception as e:
             logger.debug(f"Fallback HTML cleaning failed: {e}")
-        
+    
         # Return None if all cleaning fails
         return None
 
@@ -267,13 +267,13 @@ class DimShopProductTransformer(TransformationBase):
         Extract product data from all staging tables (dynamically discovered).
         
         Args:
-            target_date: Date to extract data for (defaults to today)
+            target_date: Date to extract data for (defaults to current UTC date)
             
         Returns:
             List of raw product JSON data
         """
         if target_date is None:
-            target_date = datetime.now().date()
+            target_date = datetime.now(timezone.utc).date()
             
         all_products = []
         
@@ -514,50 +514,6 @@ class DimShopProductTransformer(TransformationBase):
             logger.error(f"❌ Failed to insert new products: {e}")
             return False
 
-    def update_all_products_scrape_date(self, all_products: List[Dict], target_date: date) -> bool:
-        """
-        Update scrape_date for ALL products (both existing and newly inserted)
-        This ensures all products reflect the latest scrape_date from staging
-        """
-        if not all_products:
-            logger.info("No products to update scrape_date")
-            return True
-        
-        try:
-            # Get all shop_product_ids from this batch
-            shop_product_ids = [str(product['shop_product_id']) for product in all_products]
-            
-            # Process in batches to avoid query limits
-            batch_size = 1000
-            total_updated = 0
-            
-            for i in range(0, len(shop_product_ids), batch_size):
-                batch_ids = shop_product_ids[i:i + batch_size]
-                ids_list = ", ".join(batch_ids)
-                
-                # Update scrape_date for products in this batch
-                update_query = f"""
-                UPDATE `{self.project_id}.warehouse.DimShopProduct`
-                SET scraped_date = '{target_date}'
-                WHERE shop_product_id IN ({ids_list})
-                """
-                
-                try:
-                    job = self.client.query(update_query)
-                    job.result()
-                    total_updated += len(batch_ids)
-                    
-                except Exception as e:
-                    logger.warning(f"Batch update failed: {e}")
-                    continue
-            
-            logger.info(f"✅ Updated scrape_date to {target_date} for {total_updated} products")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to update scrape_date: {e}")
-            return False
-
     def process_products_batch(
         self, 
         raw_products: List[Dict], 
@@ -598,8 +554,7 @@ class DimShopProductTransformer(TransformationBase):
         """
         Daily transformation process that handles existing vs new products properly:
         1. Check existing products
-        2. Insert only NEW products  
-        3. Update scrape_date for ALL products
+        2. Insert only NEW products (scraped_date is set on creation)
         
         Args:
             products: List of validated product dictionaries
@@ -626,18 +581,13 @@ class DimShopProductTransformer(TransformationBase):
         if new_products:
             success &= self.insert_new_products(new_products)
         
-        # Step 3: Update scrape_date for ALL products (existing + new)
-        logger.info(f"🔄 Step 3: Updating scrape_date for ALL {len(products)} products...")
-        success &= self.update_all_products_scrape_date(products, target_date)
-        
         # Summary
         if success:
             logger.info("✅ Daily DimShopProduct load completed successfully!")
             logger.info(f"📊 LOAD SUMMARY:")
-            logger.info(f"  - Total products processed: {len(products)}")
-            logger.info(f"  - New products inserted: {len(new_products)}")
-            logger.info(f"  - Existing products found: {len(products) - len(new_products)}")
-            logger.info(f"  - Products with updated scrape_date: {len(products)}")
+            logger.info(f"   - Total products processed: {len(products)}")
+            logger.info(f"   - New products inserted: {len(new_products)}")
+            logger.info(f"   - Existing products found: {len(products) - len(new_products)}")
         else:
             logger.error("❌ Daily DimShopProduct load failed")
         
@@ -661,10 +611,10 @@ class DimShopProductTransformer(TransformationBase):
         success_rate = (successful_count / total * 100) if total > 0 else 0
         
         logger.info(f"DimShopProduct Transformation Summary:")
-        logger.info(f"  Total products processed: {total}")
-        logger.info(f"  Successful: {successful_count}")
-        logger.info(f"  Failed: {failed_count}")
-        logger.info(f"  Success rate: {success_rate:.2f}%")
+        logger.info(f"   Total products processed: {total}")
+        logger.info(f"   Successful: {successful_count}")
+        logger.info(f"   Failed: {failed_count}")
+        logger.info(f"   Success rate: {success_rate:.2f}%")
         
         # Log failure breakdown
         if failed_products:
@@ -682,21 +632,21 @@ class DimShopProductTransformer(TransformationBase):
             
             logger.info("Failure breakdown by type:")
             for error_type, count in failure_types.items():
-                logger.info(f"  {error_type}: {count}")
+                logger.info(f"   {error_type}: {count}")
                 
             logger.info("Failure breakdown by source:")
             for source, count in source_failures.items():
-                logger.info(f"  {source}: {count}")
+                logger.info(f"   {source}: {count}")
     
     def transform_and_load(self, target_date: date = None) -> None:
         """
         Complete transformation process for DimShopProduct.
         
         Args:
-            target_date: Date to process (defaults to today)
+            target_date: Date to process (defaults to current UTC date)
         """
         if target_date is None:
-            target_date = datetime.now().date()
+            target_date = datetime.now(timezone.utc).date()
             
         self.log_transformation_start(f"{self.table_name} for {target_date}")
         
@@ -749,9 +699,10 @@ def main():
     Main execution function for DimShopProduct transformation.
     """
     try:
-        specific_date = date(2025, 9, 8)
         transformer = DimShopProductTransformer()
-        transformer.transform_and_load(specific_date)
+        # By calling transform_and_load without a date, it will automatically
+        # use the current UTC date as per the logic inside the function.
+        transformer.transform_and_load()
         
     except Exception as e:
         logger.error(f"DimShopProduct transformation failed: {e}")
@@ -759,3 +710,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

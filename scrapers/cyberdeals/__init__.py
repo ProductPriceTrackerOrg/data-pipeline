@@ -1,0 +1,1 @@
+"""CyberDeals scraper package"""

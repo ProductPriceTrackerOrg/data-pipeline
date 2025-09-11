@@ -34,6 +34,7 @@ with DAG(
         bash_command="cd /opt/airflow/scrapers/simplytek && python -u main.py",
     )
 
+
     # Task to run the Onei.lk scraper
     scrape_onei_task = BashOperator(
         task_id="scrape_onei",
@@ -44,6 +45,12 @@ with DAG(
     scrape_lifeMobile_task = BashOperator(
         task_id="scrape_lifemobile",
         bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
+
+    # Task to run the CyberDeals scraper
+    scrape_cyberdeals_task = BashOperator(
+        task_id="scrape_cyberdeals",
+        bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
+
     )
 
     # Dummy end task for better visualization
@@ -53,5 +60,7 @@ with DAG(
     )
 
     # Set the dependencies
+
     start_task >> [scrape_appleme_task, scrape_simplytek_task, scrape_onei_task, scrape_lifeMobile_task] >> end_task
     # start_task >> scrape_simplytek_task >> end_task
+

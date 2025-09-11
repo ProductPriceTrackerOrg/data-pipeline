@@ -3,9 +3,10 @@
 FactProductPrice Loader Script
 Extracts daily price and availability for each product variant from BigQuery staging tables and loads to warehouse.
 """
+import hashlib
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import List, Dict, Optional
 from google.cloud import bigquery
 import xxhash
@@ -209,8 +210,8 @@ class FactProductPriceLoader:
                 bigquery.SchemaField("variant_id", "INTEGER", mode="REQUIRED"),  # xxhash 32-bit integer
                 bigquery.SchemaField("date_id", "INTEGER", mode="REQUIRED"),
                 # Changed from FLOAT to NUMERIC with precision and scale to match the existing schema
-                bigquery.SchemaField("current_price", "FLOAT", mode="REQUIRED", precision=10, scale=2),
-                bigquery.SchemaField("original_price", "FLOAT", mode="NULLABLE", precision=10, scale=2),
+                bigquery.SchemaField("current_price", "FLOAT", mode="REQUIRED"),
+                bigquery.SchemaField("original_price", "FLOAT", mode="NULLABLE"),
                 bigquery.SchemaField("is_available", "BOOLEAN", mode="REQUIRED"),
             ]
         )
@@ -228,8 +229,8 @@ def main():
     """Main execution function."""
     loader = FactProductPriceLoader()
     
-    # You can specify a date here, or it will default to today
-    target_date = date(2025, 9, 8).strftime("%Y-%m-%d")
+    # Use the current UTC date for the transformation
+    target_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
     transformed_rows = loader.extract_and_transform(target_date)
     loader.load_to_bigquery(transformed_rows)

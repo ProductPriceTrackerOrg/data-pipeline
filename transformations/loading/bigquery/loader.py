@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 BigQuery loader for staging raw data from ADLS.
-This script dynamically discovers the latest available data for each source from the ADLS container structure.
+This script loads data for the current UTC date for all discovered sources.
 """
 import os
 import json
@@ -12,7 +12,7 @@ from google.cloud import bigquery
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 
-from transformations.loading.bigquery.staging_schema import (
+from staging_schema import (
     STAGING_SCHEMA, 
     get_staging_table_name, 
     get_staging_table_id,
@@ -132,13 +132,13 @@ class BigQueryLoader:
         return table_id
     
     def load_source_data(self, 
-                         source: str, 
-                         products: List[Dict], 
-                         scrape_date: str, 
-                         file_path: str = None) -> int:
+                          source: str, 
+                          products: List[Dict], 
+                          scrape_date: str, 
+                          file_path: str = None) -> int:
         """
         Loads products for a specific source and date using a robust BigQuery Load Job.
-        This method will overwrite any existing data for that specific date partition.
+        This method will completely clean the entire staging table before loading new data.
         """
         if not products:
             logger.warning(f"No products to load for {source}")
@@ -146,9 +146,18 @@ class BigQueryLoader:
         
         table_id = self.ensure_staging_table_exists(source)
         
-        # BigQuery expects dates in YYYYMMDD format for partition decorators.
-        partition_decorator = scrape_date.replace("-", "")
-        table_id_with_partition = f"{table_id}${partition_decorator}"
+        # Clean the entire staging table first
+        try:
+            # Execute DELETE query to remove all data from the table
+            delete_query = f"DELETE FROM `{table_id}` WHERE TRUE"
+            logger.info(f"Cleaning entire staging table with query: {delete_query}")
+            
+            delete_job = self.client.query(delete_query)
+            delete_job.result()  # Wait for the deletion to complete
+            logger.info(f"Successfully cleaned all data from {table_id}")
+        except Exception as e:
+            logger.error(f"❌ Failed to clean staging table {table_id}: {e}")
+            # Continue with the load even if cleaning fails
         
         # Prepare the single row to be loaded. The entire product list becomes one JSON field.
         row_to_load = {
@@ -160,26 +169,27 @@ class BigQueryLoader:
             "product_count": len(products)
         }
         
-        # Configure the Load Job for robustness and to overwrite the specific day's partition.
+        # Configure the Load Job for robustness 
         job_config = bigquery.LoadJobConfig(
             schema=STAGING_SCHEMA,
             # This tells BigQuery to treat the `raw_json_data` string as a JSON type.
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-            # This is the key for overwriting: it will wipe the partition before loading.
-            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            # We don't need WRITE_TRUNCATE anymore since we manually cleaned the table
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
         )
 
         try:
+            logger.info(f"Loading data to {table_id} after cleaning all existing data")
             # We pass a list containing our single row dict.
             # load_table_from_json is the robust way to handle bulk loads.
             job = self.client.load_table_from_json(
                 [row_to_load],
-                table_id_with_partition,
+                table_id,
                 job_config=job_config,
             )
             job.result()  # Wait for the job to complete.
 
-            logger.info(f"Successfully loaded {len(products)} products to {table_id} for partition {scrape_date}")
+            logger.info(f"Successfully loaded {len(products)} products to {table_id} for date {scrape_date}")
             return len(products)
 
         except Exception as e:
@@ -217,7 +227,11 @@ class BigQueryLoader:
             )
             
         except Exception as e:
-            logger.error(f"❌ Failed to load {source} for date {scrape_date} from ADLS: {e}")
+            # This error is now expected if a file doesn't exist for the current day
+            if "BlobNotFound" in str(e):
+                 logger.warning(f"No data file found for '{source}' on date '{scrape_date}'. This is normal if scraping hasn't completed.")
+            else:
+                logger.error(f"❌ Failed to load {source} for date {scrape_date} from ADLS: {e}")
             return 0
     
     def validate_load(self, source: str, scrape_date: str) -> Dict:
@@ -258,56 +272,59 @@ class BigQueryLoader:
             return []
 
 def main():
-    """Dynamically discover the latest available date for each source in ADLS and load its data to BigQuery."""
-    logger.info("Loading BigQuery Staging with latest available data from ADLS")
+    """
+    Loads data for the CURRENT UTC DATE for all discovered sources in ADLS and loads to BigQuery.
+    """
+    logger.info("Loading BigQuery Staging with data for the current UTC date from ADLS")
     
     loader = BigQueryLoader()
+
+    # --- GET CURRENT UTC DATE ---
+    target_date = datetime.utcnow().strftime("%Y-%m-%d")
+    logger.info(f"Targeting data for current UTC date: {target_date}")
     
-    # --- DYNAMIC DISCOVERY OF LATEST (SOURCE, DATE) PAIRS ---
+    # --- DISCOVER ALL AVAILABLE SOURCES ---
     if not loader.blob_service_client:
         logger.error("❌ Cannot discover sources. Azure connection not available.")
         return
 
-    logger.info(f"Discovering latest data for each source in ADLS container '{loader.azure_container}'...")
-    sources_to_process = {}
+    logger.info(f"Discovering all available sources in ADLS container '{loader.azure_container}'...")
+    all_sources = set()
     try:
         container_client = loader.blob_service_client.get_container_client(loader.azure_container)
         
-        for blob in container_client.list_blobs():
-            # Expected path: source_website={source_name}/scrape_date={date}/data.json
-            if blob.name.startswith("source_website=") and blob.name.endswith("/data.json"):
-                parts = blob.name.split('/')
-                if len(parts) == 3:
-                    try:
-                        source_name = parts[0].split('=')[1]
-                        scrape_date = parts[1].split('=')[1]
-
-                        if source_name and scrape_date:
-                            # If source is new, or this date is newer than the one we have stored
-                            if source_name not in sources_to_process or scrape_date > sources_to_process[source_name]:
-                                sources_to_process[source_name] = scrape_date
-                    except IndexError:
-                        logger.debug(f"Skipping blob with unexpected path format: {blob.name}")
-                        continue
+        # Scan blobs to get a unique list of all source names
+        for blob in container_client.list_blobs(name_starts_with="source_website="):
+            if blob.name.endswith("/data.json"):
+                try:
+                    # Expected path: source_website={source_name}/scrape_date={date}/data.json
+                    source_name = blob.name.split('/')[0].split('=')[1]
+                    if source_name:
+                        all_sources.add(source_name)
+                except IndexError:
+                    logger.debug(f"Skipping blob with unexpected path format: {blob.name}")
+                    continue
         
-        if not sources_to_process:
-            logger.warning("No valid data files found in ADLS container. Nothing to load.")
+        if not all_sources:
+            logger.warning("No valid sources found in ADLS container. Nothing to load.")
             return
 
-        logger.info(f"Discovered {len(sources_to_process)} sources with latest data to process:")
-        for source, date_str in sorted(sources_to_process.items()):
-             logger.info(f"   - {source}: {date_str}")
+        # --- PREPARE SOURCES TO PROCESS FOR THE TARGET DATE ---
+        sources_to_process = {source: target_date for source in all_sources}
+        
+        logger.info(f"Will attempt to load data for {len(sources_to_process)} sources for date {target_date}:")
+        for source in sorted(sources_to_process.keys()):
+              logger.info(f"   - {source}")
 
     except Exception as e:
         logger.error(f"❌ Failed to discover sources in ADLS: {e}")
         return
-    # --- END DYNAMIC DISCOVERY ---
     
-    # --- LOAD AND VALIDATE EACH SOURCE WITH ITS LATEST DATE ---
+    # --- LOAD AND VALIDATE EACH SOURCE FOR THE CURRENT UTC DATE ---
     results = {}
     logger.info("\nStarting ADLS → BigQuery loading process...")
     for source, date_to_process in sorted(sources_to_process.items()):
-        logger.info(f"--- Processing source: '{source}' for its latest date: '{date_to_process}' ---")
+        logger.info(f"--- Processing source: '{source}' for date: '{date_to_process}' ---")
         loaded_count = loader.load_from_adls_blob(source, date_to_process)
         results[source] = loaded_count
 

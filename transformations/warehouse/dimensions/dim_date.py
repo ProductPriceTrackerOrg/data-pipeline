@@ -1,9 +1,10 @@
+#!/usr/bin/env python3
 """
 DimDate Transformation Script
 Generates and loads date dimension data into the warehouse.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 import logging
 from google.cloud import bigquery
@@ -50,7 +51,7 @@ class DimDateTransformer:
             
             # Get day of week name
             day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 
-                        'Friday', 'Saturday', 'Sunday']
+                         'Friday', 'Saturday', 'Sunday']
             day_of_week = day_names[current_date.weekday()]
             
             date_record = {
@@ -80,7 +81,7 @@ class DimDateTransformer:
         
         # Configure job - truncate only if explicitly requested
         write_disposition = (bigquery.WriteDisposition.WRITE_TRUNCATE if truncate 
-                            else bigquery.WriteDisposition.WRITE_APPEND)
+                             else bigquery.WriteDisposition.WRITE_APPEND)
         
         job_config = bigquery.LoadJobConfig(
             write_disposition=write_disposition,
@@ -116,17 +117,17 @@ class DimDateTransformer:
         Complete transformation and loading process for DimDate.
         
         Args:
-            start_date: Start date for dimension (defaults to today)
-            end_date: End date for dimension (defaults to today)
+            start_date: Start date for dimension (defaults to current UTC date)
+            end_date: End date for dimension (defaults to current UTC date)
             reset_table: If True, replace all existing data. If False, add only if dates don't exist.
         """
-        # Set default date range if not provided - only today's date
+        # Set default date range to the current UTC date if not provided
         if start_date is None:
-            start_date = datetime.now()  # Start from today
+            start_date = datetime.now(timezone.utc)  # Use modern, timezone-aware UTC
         if end_date is None:
-            end_date = datetime.now()    # End at today (only today's date)
+            end_date = datetime.now(timezone.utc)    # Use modern, timezone-aware UTC
             
-        logger.info(f"Starting DimDate transformation for range: {start_date.date()} to {end_date.date()}")
+        logger.info(f"Starting DimDate transformation for range: {start_date.date()} to {end_date.date()} (UTC)")
         
         if reset_table:
             # Generate date data and replace all existing data
@@ -194,6 +195,7 @@ def main():
     """
     try:
         transformer = DimDateTransformer()
+        # This will now default to using the current UTC date.
         transformer.transform_and_load()
         
     except Exception as e:
@@ -202,3 +204,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

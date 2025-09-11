@@ -1,12 +1,13 @@
 """
 DimProductImage Transformation Script
 Extracts and transforms product images from staging to warehouse with robust daily processing logic.
-Includes duplicate prevention and proper sort order handling.
+Includes duplicate prevention and proper sort order handling. The `scraped_date` field
+represents the date the image was first discovered and is never updated for existing images.
 """
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import List, Dict, Optional, Tuple
 from google.cloud import bigquery
 from pydantic import BaseModel, ValidationError
@@ -45,7 +46,6 @@ class DimProductImageTransformer:
         hash_id = xxhash.xxh32(business_key.encode('utf-8')).intdigest()
         return hash_id
     
-    # FIX 1: Added dynamic table discovery function
     def get_all_staging_tables(self) -> List[str]:
         """Get all staging tables that contain product data"""
         query = """
@@ -97,7 +97,6 @@ class DimProductImageTransformer:
     def extract_images_from_staging(self, table_name: str, target_date: str) -> List[Dict]:
         """Extract product images from staging table for a specific date"""
         
-        # Using the approach from dim_shop_product.py - get raw JSON data first, then parse in Python
         query = f"""
         SELECT 
             raw_json_data,
@@ -113,31 +112,25 @@ class DimProductImageTransformer:
             
             for row in results:
                 try:
-                    # Parse JSON data
                     if isinstance(row.raw_json_data, str):
                         json_data = json.loads(row.raw_json_data)
                     else:
                         json_data = row.raw_json_data
                     
-                    # Handle JSON array of products (each row contains multiple products)
                     products_to_process = json_data if isinstance(json_data, list) else [json_data]
                     
                     for product_data in products_to_process:
-                        # Get required fields
                         product_id_native = product_data.get('product_id_native')
                         image_urls = product_data.get('image_urls', [])
                         
-                        # Skip products without image URLs or product ID
                         if not product_id_native or not image_urls:
                             continue
                             
-                        # Generate shop_product_id
                         shop_product_id = self.generate_shop_product_id(
                             row.source_website, 
                             product_id_native
                         )
                         
-                        # Process each image URL
                         for sort_order, image_url in enumerate(image_urls, 1):
                             if image_url:
                                 images.append({
@@ -176,7 +169,6 @@ class DimProductImageTransformer:
                 validated_image = ProductImageModel(**image_data)
                 
                 image_dict = validated_image.model_dump()
-                # Pydantic keeps it as a date, we convert to string for the final load
                 image_dict['scraped_date'] = image_dict['scraped_date'].isoformat()
                 successful_images.append(image_dict)
                 current_image_id += 1
@@ -196,12 +188,10 @@ class DimProductImageTransformer:
         duplicate_count = 0
         
         for image in images:
-            # Convert shop_product_id to string for consistent key generation
             image_key = f"{image['shop_product_id']}|{image['image_url']}"
             
             if image_key not in existing_keys:
                 new_images.append(image)
-                # Add the new key to the set to handle duplicates within the same batch
                 existing_keys.add(image_key)
             else:
                 duplicate_count += 1
@@ -214,7 +204,10 @@ class DimProductImageTransformer:
         return new_images, duplicate_count
     
     def load_images_to_bigquery(self, images: List[Dict]) -> bool:
-        """Load new images to BigQuery"""
+        """
+        Loads only NEW images to BigQuery using an append-only operation.
+        This ensures that the `scraped_date` for existing images is never updated.
+        """
         if not images:
             logger.info("✅ No new images to load")
             return True
@@ -225,7 +218,7 @@ class DimProductImageTransformer:
                 write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
                 schema=[
                     bigquery.SchemaField("image_id", "INTEGER", mode="REQUIRED"),
-                    bigquery.SchemaField("shop_product_id", "INTEGER", mode="REQUIRED"),  # xxhash 32-bit integer
+                    bigquery.SchemaField("shop_product_id", "INTEGER", mode="REQUIRED"),
                     bigquery.SchemaField("image_url", "STRING", mode="REQUIRED"),
                     bigquery.SchemaField("sort_order", "INTEGER", mode="REQUIRED"),
                     bigquery.SchemaField("scraped_date", "DATE", mode="REQUIRED"),
@@ -250,7 +243,7 @@ class DimProductImageTransformer:
     def transform_and_load(self, target_date: str = None):
         """Run the complete DimProductImage transformation"""
         if target_date is None:
-            target_date = date.today().strftime("%Y-%m-%d")
+            target_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         
         target_date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
         
@@ -261,7 +254,6 @@ class DimProductImageTransformer:
             existing_keys = self.get_existing_image_ids()
             starting_image_id = self.get_next_image_id()
             
-            # FIX 3: Calling the dynamic table discovery function
             staging_tables = self.get_all_staging_tables()
             
             all_successful_images = []
@@ -273,7 +265,6 @@ class DimProductImageTransformer:
                 raw_images = self.extract_images_from_staging(table_name, target_date)
                 
                 if raw_images:
-                    # The starting ID for this batch needs to account for images from previous tables
                     batch_start_id = starting_image_id + len(all_successful_images)
                     
                     successful, failed = self.process_images_batch(
@@ -287,6 +278,8 @@ class DimProductImageTransformer:
                 else:
                     print(f"  ⚠️ No images found in this table for the target date")
             
+            new_images = []
+            duplicate_count = 0
             if all_successful_images:
                 print(f"\n🔄 Deduplicating {len(all_successful_images)} total images against existing data...")
                 new_images, duplicate_count = self.deduplicate_images(all_successful_images, existing_keys)
@@ -301,9 +294,10 @@ class DimProductImageTransformer:
             print("\n✅ DimProductImage transformation completed successfully!")
             print("📊 SUMMARY:")
             print(f"  - Staging tables processed: {len(staging_tables)}")
-            print(f"  - Total images transformed: {len(all_successful_images)}")
+            print(f"  - Total images transformed from today's data: {len(all_successful_images)}")
+            print(f"  - Existing images skipped (scraped_date untouched): {duplicate_count}")
+            print(f"  - New unique images loaded (scraped_date set to today): {len(new_images)}")
             print(f"  - Failed to process: {len(all_failed_images)}")
-            print(f"  - New unique images loaded: {len(new_images) if 'new_images' in locals() else 0}")
             
         except Exception as e:
             logger.error(f"DimProductImage transformation failed: {e}")
@@ -313,8 +307,7 @@ def main():
     """Main execution function for DimProductImage transformation."""
     try:
         transformer = DimProductImageTransformer()
-        specific_date = date(2025, 9, 8).strftime("%Y-%m-%d")
-        transformer.transform_and_load(specific_date)
+        transformer.transform_and_load()
         
     except Exception as e:
         logger.error(f"DimProductImage transformation failed: {e}")
@@ -322,3 +315,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

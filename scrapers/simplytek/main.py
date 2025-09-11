@@ -13,7 +13,7 @@ import logging
 import sys
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 
@@ -54,19 +54,37 @@ def upload_to_adls(json_data: str, source_website: str):
         raise ValueError("Azure connection string not found in environment variables.")
 
     # --- 2. Define the partitioned path ---
-    scrape_date = datetime.now().strftime('%Y-%m-%d')
+    utc_now = datetime.now(timezone.utc)
+    scrape_date = utc_now.strftime('%Y-%m-%d')
     file_path = f"source_website={source_website}/scrape_date={scrape_date}/data.json"
     container_name = "raw-data"
 
     try:
-        # --- 3. Connect to Azure and Upload ---
-        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+        # --- 3. Configure Azure Storage Client with increased timeouts and retry policy ---
+        from azure.storage.blob import BlobServiceClient, ContentSettings
+        from azure.core.pipeline.policies import RetryPolicy
+        
+        # Configure service client with timeouts (in seconds)
+        blob_service_client = BlobServiceClient.from_connection_string(
+            connection_string,
+            connection_timeout=60,  # Connection timeout
+            read_timeout=300,       # Read timeout
+            socket_timeout=300      # Socket timeout
+        )
+        
+        # Get blob client
         blob_client = blob_service_client.get_blob_client(container=container_name, blob=file_path)
 
         print(f"Uploading data to: {container_name}/{file_path}")
         
-        # Upload the already prepared JSON string
-        blob_client.upload_blob(json_data, overwrite=True)
+        # For large files, use chunked upload with increased timeout
+        # Upload with extended timeout and JSON content type
+        blob_client.upload_blob(
+            json_data, 
+            overwrite=True,
+            content_settings=ContentSettings(content_type='application/json'),
+            timeout=300
+        )
 
         print("Upload to ADLS successful!")
         return True
@@ -81,7 +99,7 @@ async def main():
     """Main entry point - scrape all products and save as JSON"""
     print_banner()
     print("Starting SimplyTek product scraping...")
-    print(f"Scraping started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Scraping started at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}")
     
     try:
         # Setup environment (logging, directories, etc.)

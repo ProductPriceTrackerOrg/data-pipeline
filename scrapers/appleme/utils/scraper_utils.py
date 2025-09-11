@@ -132,21 +132,33 @@ class ScraperUtils:
     @staticmethod
     def extract_brand(soup) -> Optional[str]:
         """Extract brand from product page"""
-        brand_img = soup.select_one('div.pwb-single-product-brands img')
-        if brand_img:
-            alt_text = brand_img.get('alt', '')
-            if alt_text:
-                return ScraperUtils.clean_text(alt_text)
+        # Method 1: Try to find brand from brand image
+        # brand_img = soup.select_one('div.pwb-single-product-brands img')
+        # if brand_img:
+        #     alt_text = brand_img.get('alt', '')
+        #     if alt_text:
+        #         return ScraperUtils.clean_text(alt_text)
         
-        # Try to extract from title or other sources
+        # Method 2: Try to find brand from known brand names in title
         title = soup.select_one('h1.product_title')
         if title:
             title_text = title.get_text()
             # Common brand patterns
-            brands = ['Xiaomi', 'Samsung', 'Apple', 'Sony', 'LG', 'Huawei', 'OnePlus', 'Nokia']
-            for brand in brands:
-                if brand.lower() in title_text.lower():
-                    return brand
+            # brands = ['Xiaomi', 'Samsung', 'Apple', 'Sony', 'LG', 'Huawei', 'OnePlus', 'Nokia']
+            # for brand in brands:
+            #     if brand.lower() in title_text.lower():
+            #         return brand
+            
+            # Method 3: Extract the first word from the title as the brand
+            # This is the most important method as per requirement
+            clean_title = ScraperUtils.clean_text(title_text)
+            if clean_title:
+                # Extract first word
+                first_word = clean_title.split()[0]
+                
+                # Check if the first word is a number (avoid numeric brands)
+                if not first_word[0].isdigit() and not re.match(r'^\d+$', first_word):
+                    return first_word
         
         return None
     

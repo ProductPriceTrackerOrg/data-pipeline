@@ -4,8 +4,8 @@ Performance optimization utilities for the scraper
 import asyncio
 import time
 from typing import List, Dict, Any, Callable, Optional
-from scrapers.appleme.config.scraper_config import ScraperConfig
-from scrapers.appleme.utils.scraper_utils import ScraperUtils
+from config.scraper_config import ScraperConfig
+from utils.scraper_utils import ScraperUtils
 
 
 class ScrapingMode:

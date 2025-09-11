@@ -4,7 +4,7 @@ Core product scraping implementation
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional, Set
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.product_models import (
     Product, ProductVariant, ProductMetadata, ScrapingResult,
@@ -44,7 +44,7 @@ class ProductScraper:
             ScrapingResult containing all scraped products and metadata
         """
         self.logger.info("Starting comprehensive product scraping")
-        self.scraping_stats["start_time"] = datetime.now()
+        self.scraping_stats["start_time"] = datetime.now(timezone.utc)
         
         async with ScrapingSession() as session:
             # Strategy 1: Try to scrape from the all products endpoint first
@@ -62,7 +62,7 @@ class ProductScraper:
             session_stats = session.get_stats()
             self.logger.info(f"Session stats: {session_stats}")
             
-        self.scraping_stats["end_time"] = datetime.now()
+        self.scraping_stats["end_time"] = datetime.now(timezone.utc)
         self.scraping_stats["products_scraped"] = len(self.scraped_products)
         self.scraping_stats["variants_scraped"] = sum(
             len(product.variants) for product in self.scraped_products
@@ -247,7 +247,7 @@ class ProductScraper:
                 source_website=SHOP_METADATA["source_website"],
                 shop_contact_phone=SHOP_METADATA["shop_contact_phone"],
                 shop_contact_whatsapp=SHOP_METADATA["shop_contact_whatsapp"],
-                scrape_timestamp=datetime.now()
+                scrape_timestamp=datetime.now(timezone.utc)
             )
             
             # Create and return product

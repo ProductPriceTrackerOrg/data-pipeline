@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from urllib.parse import urljoin, urlparse
 import os
@@ -289,7 +289,7 @@ def setup_logging(log_file: str = "scraper.log", level: str = "INFO") -> None:
 def create_backup_filename(original_filename: str) -> str:
     """Create backup filename with timestamp"""
     name, ext = os.path.splitext(original_filename)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return f"{name}_backup_{timestamp}{ext}"
 
 

@@ -61,6 +61,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
     AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-credentials.json
     # yamllint disable rule:line-lengths
     # Use simple http server on scheduler for health checks
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
@@ -83,7 +84,8 @@ x-airflow-common: &airflow-common
     - ${AIRFLOW_PROJ_DIR:-.}/store:/opt/airflow/store
     - ${AIRFLOW_PROJ_DIR:-.}/store:/opt/airflow/store
     - ${AIRFLOW_PROJ_DIR:-.}/transformations:/opt/airflow/transformations
-    
+    - ${AIRFLOW_PROJ_DIR:-.}/gcp-credentials.json:/opt/airflow/gcp-credentials.json:ro
+
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on
     redis:

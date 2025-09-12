@@ -6,7 +6,11 @@ HTML cleaning, Pydantic validation, and fallback strategies.
 
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
+# Add the parent directory to path so we can import from utils
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.append(parent_dir)
 
 import json
 import re
@@ -17,7 +21,7 @@ import logging
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ValidationError, validator, Field
 from google.cloud import bigquery
-from transformations.warehouse.utils.transformation_utils import TransformationBase
+from utils.transformation_utils import TransformationBase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

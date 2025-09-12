@@ -1,8 +1,10 @@
 import sys
 import os
 
-# This ensures the script can find the 'transformations' module
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+# Add the parent directory to path so we can import from utils
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.append(parent_dir)
 
 """
 DimShop Transformation Script
@@ -13,7 +15,7 @@ and incrementally loads only new shops into the warehouse.
 from typing import Dict, Set, List
 import logging
 from google.cloud import bigquery
-from transformations.warehouse.utils.transformation_utils import TransformationBase
+from utils.transformation_utils import TransformationBase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

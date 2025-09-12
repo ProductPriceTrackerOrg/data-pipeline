@@ -23,11 +23,11 @@ with DAG(
         bash_command="echo 'Starting data ingestion pipeline...'"
     )
 
-    # # Task to run the AppleMe scraper
-    # scrape_appleme_task = BashOperator(
-    #     task_id="scrape_appleme",
-    #     bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
-    # )
+    # Task to run the AppleMe scraper
+    scrape_appleme_task = BashOperator(
+        task_id="scrape_appleme",
+        bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
+    )
 
     # Task to run the SimplyTek scraper
     scrape_simplytek_task = BashOperator(
@@ -36,31 +36,31 @@ with DAG(
     )
 
 
-    # # Task to run the Onei.lk scraper
-    # scrape_onei_task = BashOperator(
-    #     task_id="scrape_onei",
-    #     bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
-    # )
+    # Task to run the Onei.lk scraper
+    scrape_onei_task = BashOperator(
+        task_id="scrape_onei",
+        bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
+    )
 
-    # # Task to run the lifeMobile  scraper
-    # scrape_lifeMobile_task = BashOperator(
-    #     task_id="scrape_lifemobile",
-    #     bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
-    # )
+    # Task to run the lifeMobile  scraper
+    scrape_lifeMobile_task = BashOperator(
+        task_id="scrape_lifemobile",
+        bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
+    )
 
-    # # Task to run the CyberDeals scraper
-    # scrape_cyberdeals_task = BashOperator(
-    #     task_id="scrape_cyberdeals",
-    #     bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
+    # Task to run the CyberDeals scraper
+    scrape_cyberdeals_task = BashOperator(
+        task_id="scrape_cyberdeals",
+        bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
 
-    # )
+    )
     
-    # # Task to run the laptops.lk scraper
-    # scrape_laptoplk_task = BashOperator(
-    #     task_id="scrape_laptoplk",
-    #     bash_command="cd /opt/airflow/scrapers/laptoplk && python -u main.py",
+    # Task to run the laptops.lk scraper
+    scrape_laptoplk_task = BashOperator(
+        task_id="scrape_laptoplk",
+        bash_command="cd /opt/airflow/scrapers/laptoplk && python -u main.py",
 
-    # )
+    )
     
     # Delay task (20 seconds)
     delay_task = BashOperator(
@@ -113,22 +113,14 @@ with DAG(
 
     # Set the dependencies
 
-    # start_task >> [
-    #                 scrape_appleme_task, 
-    #                 scrape_simplytek_task, 
-    #                 scrape_onei_task, 
-    #                 scrape_lifeMobile_task, 
-    #                 scrape_laptoplk_task, 
-    #                 scrape_cyberdeals_task
-    # ] >> delay_task >> load_staging_task >> [
-    #                                         transform_dim_date_task,
-    #                                         transform_dim_shop_task,
-    #                                         transform_dim_shop_product_task,
-    #                                         transform_dim_variant_task,
-    #                                         transform_dim_product_image_task,
-    #                                         transform_fact_product_price_task,
-    #                                         ] >> end_task
-    start_task >> scrape_simplytek_task >> delay_task >> load_staging_task >> [
+    start_task >> [
+                    scrape_appleme_task, 
+                    scrape_simplytek_task, 
+                    scrape_onei_task, 
+                    scrape_lifeMobile_task, 
+                    scrape_laptoplk_task, 
+                    scrape_cyberdeals_task
+    ] >> delay_task >> load_staging_task >> [
                                             transform_dim_date_task,
                                             transform_dim_shop_task,
                                             transform_dim_shop_product_task,
@@ -136,4 +128,12 @@ with DAG(
                                             transform_dim_product_image_task,
                                             transform_fact_product_price_task,
                                             ] >> end_task
+    # start_task >> scrape_simplytek_task >> delay_task >> load_staging_task >> [
+    #                                         transform_dim_date_task,
+    #                                         transform_dim_shop_task,
+    #                                         transform_dim_shop_product_task,
+    #                                         transform_dim_variant_task,
+    #                                         transform_dim_product_image_task,
+    #                                         transform_fact_product_price_task,
+    #                                         ] >> end_task
 

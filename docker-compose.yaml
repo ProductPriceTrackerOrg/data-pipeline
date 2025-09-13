@@ -61,6 +61,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
     AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+    PROJECT_ID: "price-pulse-470211"
+    WAREHOUSE: "warehouse"
     GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-credentials.json
     # yamllint disable rule:line-lengths
     # Use simple http server on scheduler for health checks
@@ -83,6 +85,7 @@ x-airflow-common: &airflow-common
     - ${AIRFLOW_PROJ_DIR:-.}/scrapers:/opt/airflow/scrapers
     - ${AIRFLOW_PROJ_DIR:-.}/store:/opt/airflow/store
     - ${AIRFLOW_PROJ_DIR:-.}/transformations:/opt/airflow/transformations
+    - ${AIRFLOW_PROJ_DIR:-.}/product_categorization:/opt/airflow/product_categorization
     - ${AIRFLOW_PROJ_DIR:-.}/gcp-credentials.json:/opt/airflow/gcp-credentials.json:ro
     - ${AIRFLOW_PROJ_DIR:-.}/init_gcp_creds.py:/opt/airflow/init_gcp_creds.py
 

@@ -35,31 +35,28 @@ with DAG(
         bash_command="cd /opt/airflow/scrapers/simplytek && python -u main.py",
     )
 
-
     # Task to run the Onei.lk scraper
     scrape_onei_task = BashOperator(
         task_id="scrape_onei",
         bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
     )
 
-    # Task to run the lifeMobile  scraper
-    scrape_lifeMobile_task = BashOperator(
+    # Task to run the lifeMobile scraper
+    scrape_lifemobile_task = BashOperator(
         task_id="scrape_lifemobile",
         bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
     )
 
-    # Task to run the CyberDeals scraper
-    scrape_cyberdeals_task = BashOperator(
-        task_id="scrape_cyberdeals",
-        bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
-
-    )
+    # # Task to run the CyberDeals scraper
+    # scrape_cyberdeals_task = BashOperator(
+    #     task_id="scrape_cyberdeals",
+    #     bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
+    # )
     
     # Task to run the laptops.lk scraper
     scrape_laptoplk_task = BashOperator(
         task_id="scrape_laptoplk",
         bash_command="cd /opt/airflow/scrapers/laptoplk && python -u main.py",
-
     )
     
     # Delay task (20 seconds)
@@ -67,7 +64,13 @@ with DAG(
         task_id="delay",
         bash_command="sleep 10",
     )
-    
+
+    # environment setup task docker compose exec airflow-worker bash -c "python /opt/airflow/init_gcp_creds.py" 
+    setup_env_task = BashOperator(
+        task_id="setup_env",
+        bash_command="python /opt/airflow/init_gcp_creds.py",
+    )
+
     # Task to load data into staging tables
     load_staging_task = BashOperator(
         task_id="load_staging",
@@ -117,10 +120,10 @@ with DAG(
                     scrape_appleme_task, 
                     scrape_simplytek_task, 
                     scrape_onei_task, 
-                    scrape_lifeMobile_task, 
-                    scrape_laptoplk_task, 
-                    scrape_cyberdeals_task
-    ] >> delay_task >> load_staging_task >> [
+                    scrape_lifemobile_task,  
+                    scrape_laptoplk_task
+                    # scrape_cyberdeals_task
+    ] >> delay_task >> setup_env_task >> load_staging_task >> [
                                             transform_dim_date_task,
                                             transform_dim_shop_task,
                                             transform_dim_shop_product_task,
@@ -128,12 +131,4 @@ with DAG(
                                             transform_dim_product_image_task,
                                             transform_fact_product_price_task,
                                             ] >> end_task
-    # start_task >> scrape_simplytek_task >> delay_task >> load_staging_task >> [
-    #                                         transform_dim_date_task,
-    #                                         transform_dim_shop_task,
-    #                                         transform_dim_shop_product_task,
-    #                                         transform_dim_variant_task,
-    #                                         transform_dim_product_image_task,
-    #                                         transform_fact_product_price_task,
-    #                                         ] >> end_task
 

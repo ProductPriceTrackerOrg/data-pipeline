@@ -116,10 +116,18 @@ class DimProductImageTransformer:
                         json_data = json.loads(row.raw_json_data)
                     else:
                         json_data = row.raw_json_data
+                        
+                    # Sometimes json_data itself might be a string that needs parsing again (double-encoded)
+                    if isinstance(json_data, str):
+                        json_data = json.loads(json_data)
                     
                     products_to_process = json_data if isinstance(json_data, list) else [json_data]
                     
                     for product_data in products_to_process:
+                        if not isinstance(product_data, dict):
+                            logger.warning(f"Expected product data to be a dictionary, got {type(product_data)}: {str(product_data)[:100]}...")
+                            continue
+                            
                         product_id_native = product_data.get('product_id_native')
                         image_urls = product_data.get('image_urls', [])
                         

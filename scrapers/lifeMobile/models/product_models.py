@@ -3,7 +3,7 @@ Pydantic models for LifeMobile data validation and schema enforcement
 """
 from pydantic import BaseModel, HttpUrl, Field, validator
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 class PaymentOption(BaseModel):
@@ -45,16 +45,14 @@ class ProductVariant(BaseModel):
             raise ValueError('variant_title cannot be empty')
         return str(v).strip()
 
-def utc_now():
-    return datetime.now(timezone.utc)
 
 class ProductMetadata(BaseModel):
     """Model for product metadata"""
     source_website: str = Field(..., description="Source website URL")
     shop_contact_phone: Optional[str] = Field(None, description="Shop contact phone number")
     shop_contact_whatsapp: Optional[str] = Field(None, description="Shop WhatsApp contact")
-    scrape_timestamp: datetime = Field(default_factory=utc_now)
-
+    scrape_timestamp: datetime = Field(default_factory=datetime.now, description="Timestamp when data was scraped")
+    
     class Config:
         json_encoders = {
             datetime: lambda v: v.isoformat()
@@ -142,7 +140,7 @@ class LifeMobileScrapeStats(BaseModel):
     
     def finish_scraping(self):
         """Mark scraping as finished and calculate final stats"""
-        self.end_time = datetime.now(timezone.utc)
+        self.end_time = datetime.now()
         self.duration_seconds = (self.end_time - self.start_time).total_seconds()
         if self.duration_seconds > 0:
             self.scraping_rate = self.products_scraped / self.duration_seconds

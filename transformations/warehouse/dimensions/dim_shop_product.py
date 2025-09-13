@@ -321,6 +321,10 @@ class DimShopProductTransformer(TransformationBase):
                         else:
                             json_data = row.raw_json_data
                         
+                        # Sometimes json_data itself might be a string that needs parsing again (double-encoded)
+                        if isinstance(json_data, str):
+                            json_data = json.loads(json_data)
+                        
                         # Handle JSON array of products (each row contains multiple products)
                         if isinstance(json_data, list):
                             for single_product in json_data:

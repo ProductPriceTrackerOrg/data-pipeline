@@ -137,10 +137,18 @@ class FactProductPriceLoader:
                         else:
                             json_data = row.raw_json_data
                         
+                        # Sometimes json_data itself might be a string that needs parsing again (double-encoded)
+                        if isinstance(json_data, str):
+                            json_data = json.loads(json_data)
+                            
                         # Handle JSON array of products (each row contains multiple products)
                         products_to_process = json_data if isinstance(json_data, list) else [json_data]
                         
                         for product_data in products_to_process:
+                            if not isinstance(product_data, dict):
+                                logger.warning(f"Expected product data to be a dictionary, got {type(product_data)}: {product_data[:100]}...")
+                                continue
+                                
                             # Basic validation
                             product_id_native = product_data.get('product_id_native')
                             if not product_id_native:

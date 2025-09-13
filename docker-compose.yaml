@@ -70,7 +70,7 @@ x-airflow-common: &airflow-common
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
 
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-Brotli==1.1.0 aiohttp[speedups] Scrapy nest-asyncio==1.5.6 selectolax==0.3.17 google-cloud-bigquery==3.11.4 google-auth==2.23.0 xxhash}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-Brotli==1.1.0 aiohttp[speedups] Scrapy nest-asyncio==1.5.6 selectolax==0.3.17 google-cloud-bigquery==3.11.4 google-auth==2.23.0 xxhash httpx[http2]}
 
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file

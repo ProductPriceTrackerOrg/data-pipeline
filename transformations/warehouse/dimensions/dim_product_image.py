@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, date, timezone
 from typing import List, Dict, Optional, Tuple
 from google.cloud import bigquery
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator, HttpUrl
 import xxhash  # Add xxhash import
 
 # Configure logging
@@ -22,9 +22,20 @@ class ProductImageModel(BaseModel):
     """Validated model for DimProductImage warehouse table."""
     image_id: int
     shop_product_id: int  # xxhash 32-bit integer
-    image_url: str
+    image_url: str  # Using str instead of HttpUrl to allow custom validation
     sort_order: int
     scraped_date: date
+    
+    @field_validator('image_url')
+    @classmethod
+    def validate_image_url(cls, v):
+        """
+        Validate that image URL meets our requirements:
+        - Must start with https://
+        """
+        if not v.startswith("https://"):
+            raise ValueError("Image URL must start with https://")
+        return v
     
     class Config:
         extra = "forbid"
@@ -94,6 +105,77 @@ class DimProductImageTransformer:
             logger.warning(f"Could not get next image_id (table might be empty): {e}. Starting from 1.")
             return 1
     
+    def is_valid_image_url(self, url: str) -> bool:
+        """
+        Validate if the URL is a valid image URL
+        
+        Validation criteria:
+        1. Must start with "https://"
+        2. Must be a non-empty string
+        """
+        if not url or not isinstance(url, str):
+            return False
+            
+        # Check if URL starts with https://
+        if not url.lower().startswith("https://"):
+            logger.warning(f"Rejected invalid image URL (not https): {url[:100]}...")
+            return False
+            
+        # Additional validations could be added here:
+        # - Check for common image extensions (.jpg, .png, etc.)
+        # - Check for malformed URLs
+        # - Maximum URL length
+        
+        return True
+    
+    def validate_and_sort_product_images(self, product_images: List[Dict]) -> List[Dict]:
+        """
+        Filter out invalid images and reassign sort orders
+        Ensures each product has its valid images sorted as 1,2,3...
+        
+        Returns only valid images with corrected sort orders
+        """
+        # Group images by product ID
+        products = {}
+        for image in product_images:
+            shop_product_id = image['shop_product_id']
+            if shop_product_id not in products:
+                products[shop_product_id] = []
+            products[shop_product_id].append(image)
+        
+        valid_images = []
+        products_with_no_valid_images = 0
+        products_with_reordered_images = 0
+        
+        for shop_product_id, images in products.items():
+            # Filter valid images
+            valid_product_images = [
+                img for img in images 
+                if self.is_valid_image_url(img['image_url'])
+            ]
+            
+            if not valid_product_images:
+                products_with_no_valid_images += 1
+                logger.warning(f"Product {shop_product_id} has no valid images")
+                continue
+                
+            # If the original sort order was changed, log it
+            if len(valid_product_images) != len(images):
+                products_with_reordered_images += 1
+                
+            # Reassign sort orders (1,2,3...) to valid images only
+            for new_sort_order, image in enumerate(valid_product_images, 1):
+                image['sort_order'] = new_sort_order
+                valid_images.append(image)
+        
+        logger.info(f"Image validation results:")
+        logger.info(f"  - Total products processed: {len(products)}")
+        logger.info(f"  - Products with no valid images: {products_with_no_valid_images}")
+        logger.info(f"  - Products with reordered images: {products_with_reordered_images}")
+        logger.info(f"  - Valid images after filtering: {len(valid_images)}")
+        
+        return valid_images
+
     def extract_images_from_staging(self, table_name: str, target_date: str) -> List[Dict]:
         """Extract product images from staging table for a specific date"""
         
@@ -108,7 +190,7 @@ class DimProductImageTransformer:
         
         try:
             results = self.client.query(query).result()
-            images = []
+            raw_images = []
             
             for row in results:
                 try:
@@ -141,7 +223,7 @@ class DimProductImageTransformer:
                         
                         for sort_order, image_url in enumerate(image_urls, 1):
                             if image_url:
-                                images.append({
+                                raw_images.append({
                                     'shop_product_id': shop_product_id,
                                     'image_url': image_url,
                                     'sort_order': sort_order
@@ -151,8 +233,13 @@ class DimProductImageTransformer:
                     logger.warning(f"Error parsing product data: {e}")
                     continue
             
-            logger.info(f"Extracted {len(images)} images from {table_name}")
-            return images
+            logger.info(f"Extracted {len(raw_images)} raw images from {table_name}")
+            
+            # Apply validation and sort ordering
+            valid_images = self.validate_and_sort_product_images(raw_images)
+            
+            logger.info(f"Validation complete - {len(valid_images)} of {len(raw_images)} images are valid")
+            return valid_images
             
         except Exception as e:
             logger.error(f"Error extracting images from {table_name}: {e}")
@@ -166,10 +253,20 @@ class DimProductImageTransformer:
         
         for raw_image in raw_images:
             try:
+                # Ensure the image URL is HTTPS (double-check, even though we should have filtered these already)
+                image_url = raw_image['image_url']
+                if not self.is_valid_image_url(image_url):
+                    logger.warning(f"Skipping image with invalid URL format: {image_url[:100]}...")
+                    failed_images.append({
+                        'raw_data': raw_image, 
+                        'error': 'Invalid image URL: must start with https://'
+                    })
+                    continue
+                
                 image_data = {
                     'image_id': current_image_id,
                     'shop_product_id': raw_image['shop_product_id'],
-                    'image_url': raw_image['image_url'],
+                    'image_url': image_url,
                     'sort_order': raw_image['sort_order'],
                     'scraped_date': target_date
                 }
@@ -187,6 +284,11 @@ class DimProductImageTransformer:
             except Exception as e:
                 logger.error(f"Error processing image: {e}")
                 failed_images.append({'raw_data': raw_image, 'error': str(e)})
+        
+        # Log validation results
+        logger.info(f"Image batch processing results:")
+        logger.info(f"  - Images successfully processed: {len(successful_images)}")
+        logger.info(f"  - Images failed validation: {len(failed_images)}")
         
         return successful_images, failed_images
     
@@ -267,29 +369,56 @@ class DimProductImageTransformer:
             all_successful_images = []
             all_failed_images = []
             
+            # Track validation metrics
+            total_raw_images_count = 0
+            total_invalid_images_count = 0
+            
             for table_name in staging_tables:
                 print(f"\n📋 Processing {table_name}...")
                 
-                raw_images = self.extract_images_from_staging(table_name, target_date)
+                # Track the number of raw images before validation
+                raw_count_query = f"""
+                SELECT COUNT(*) as raw_count
+                FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
+                WHERE scrape_date = '{target_date}'
+                AND JSON_EXTRACT_ARRAY(raw_json_data, '$.image_urls') IS NOT NULL
+                """
                 
-                if raw_images:
+                try:
+                    raw_result = list(self.client.query(raw_count_query).result())
+                    if raw_result:
+                        estimated_raw_count = raw_result[0].raw_count
+                        total_raw_images_count += estimated_raw_count
+                except Exception:
+                    # If this fails, we'll still continue with the process
+                    pass
+                
+                # Extract images with validation
+                valid_images = self.extract_images_from_staging(table_name, target_date)
+                
+                if valid_images:
                     batch_start_id = starting_image_id + len(all_successful_images)
                     
                     successful, failed = self.process_images_batch(
-                        raw_images, target_date_obj, batch_start_id
+                        valid_images, target_date_obj, batch_start_id
                     )
                     
                     all_successful_images.extend(successful)
                     all_failed_images.extend(failed)
                     
-                    print(f"  ✅ Transformed {len(successful)} images")
+                    print(f"  ✅ Transformed {len(successful)} valid images")
                 else:
-                    print(f"  ⚠️ No images found in this table for the target date")
+                    print(f"  ⚠️ No valid images found in this table for the target date")
+            
+            # Estimate invalid images (this is approximate since we don't track exact counts)
+            total_invalid_images_count = total_raw_images_count - len(all_successful_images)
+            if total_invalid_images_count < 0:
+                total_invalid_images_count = 0  # Guard against negative values
             
             new_images = []
             duplicate_count = 0
             if all_successful_images:
-                print(f"\n🔄 Deduplicating {len(all_successful_images)} total images against existing data...")
+                print(f"\n🔄 Deduplicating {len(all_successful_images)} validated images against existing data...")
                 new_images, duplicate_count = self.deduplicate_images(all_successful_images, existing_keys)
                 
                 if new_images:
@@ -302,14 +431,37 @@ class DimProductImageTransformer:
             print("\n✅ DimProductImage transformation completed successfully!")
             print("📊 SUMMARY:")
             print(f"  - Staging tables processed: {len(staging_tables)}")
-            print(f"  - Total images transformed from today's data: {len(all_successful_images)}")
+            print(f"  - Estimated raw images in staging data: {total_raw_images_count}")
+            print(f"  - Images rejected by validation (not HTTPS): ~{total_invalid_images_count}")
+            print(f"  - Valid images after HTTPS validation: {len(all_successful_images)}")
             print(f"  - Existing images skipped (scraped_date untouched): {duplicate_count}")
             print(f"  - New unique images loaded (scraped_date set to today): {len(new_images)}")
-            print(f"  - Failed to process: {len(all_failed_images)}")
+            print(f"  - Failed validation/processing: {len(all_failed_images)}")
+            
+            # Log invalid images for debugging if there are any
+            if all_failed_images:
+                self.log_invalid_images(all_failed_images, f"invalid_images_{target_date}.json")
+                print(f"  - Invalid images logged to invalid_images_{target_date}.json for review")
             
         except Exception as e:
             logger.error(f"DimProductImage transformation failed: {e}")
             raise
+
+    def log_invalid_images(self, invalid_images: List[Dict], output_path: str = "invalid_images.json"):
+        """
+        Log invalid images to a JSON file for debugging purposes
+        
+        Args:
+            invalid_images: List of invalid images with error information
+            output_path: File path to save the invalid images
+        """
+        try:
+            if invalid_images:
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(invalid_images, f, indent=2, default=str)
+                logger.info(f"Logged {len(invalid_images)} invalid images to {output_path}")
+        except Exception as e:
+            logger.error(f"Error logging invalid images: {e}")
 
 def main():
     """Main execution function for DimProductImage transformation."""

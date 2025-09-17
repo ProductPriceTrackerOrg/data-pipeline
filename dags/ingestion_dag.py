@@ -65,54 +65,54 @@ with DAG(
         bash_command="sleep 10",
     )
 
-    # environment setup task docker compose exec airflow-worker bash -c "python /opt/airflow/init_gcp_creds.py" 
-    setup_env_task = BashOperator(
-        task_id="setup_env",
-        bash_command="python /opt/airflow/init_gcp_creds.py",
-    )
+    # # environment setup task docker compose exec airflow-worker bash -c "python /opt/airflow/init_gcp_creds.py" 
+    # setup_env_task = BashOperator(
+    #     task_id="setup_env",
+    #     bash_command="python /opt/airflow/init_gcp_creds.py",
+    # )
 
-    # Task to load data into staging tables
-    load_staging_task = BashOperator(
-        task_id="load_staging",
-        bash_command="cd /opt/airflow/transformations/loading/bigquery && python -u loader.py",
-    )
+    # # Task to load data into staging tables
+    # load_staging_task = BashOperator(
+    #     task_id="load_staging",
+    #     bash_command="cd /opt/airflow/transformations/loading/bigquery && python -u loader.py",
+    # )
     
-    # Transformation tasks
-    transform_dim_date_task = BashOperator(
-        task_id="transform_dim_date",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_date.py",
-    )
+    # # Transformation tasks
+    # transform_dim_date_task = BashOperator(
+    #     task_id="transform_dim_date",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_date.py",
+    # )
 
-    transform_dim_shop_task = BashOperator(
-        task_id="transform_dim_shop",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop.py",
-    )
+    # transform_dim_shop_task = BashOperator(
+    #     task_id="transform_dim_shop",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop.py",
+    # )
 
-    transform_dim_shop_product_task = BashOperator(
-        task_id="transform_dim_shop_product",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop_product.py",
-    )
+    # transform_dim_shop_product_task = BashOperator(
+    #     task_id="transform_dim_shop_product",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop_product.py",
+    # )
     
-    transform_dim_variant_task = BashOperator(
-        task_id="transform_dim_variant",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_variant.py",
-    )
+    # transform_dim_variant_task = BashOperator(
+    #     task_id="transform_dim_variant",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_variant.py",
+    # )
 
-    transform_dim_product_image_task = BashOperator(
-        task_id="transform_dim_product_image",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_product_image.py",
-    )
+    # transform_dim_product_image_task = BashOperator(
+    #     task_id="transform_dim_product_image",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_product_image.py",
+    # )
 
-    transform_fact_product_price_task = BashOperator(
-        task_id="transform_fact_product_price",
-        bash_command="cd /opt/airflow/transformations/warehouse/facts && python -u fact_product_price.py",
-    )
+    # transform_fact_product_price_task = BashOperator(
+    #     task_id="transform_fact_product_price",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/facts && python -u fact_product_price.py",
+    # )
             
-    # Dummy end task for better visualization
-    end_task = BashOperator(
-        task_id="end", 
-        bash_command="echo 'Data ingestion pipeline completed successfully.'"
-    )
+    # # Dummy end task for better visualization
+    # end_task = BashOperator(
+    #     task_id="end", 
+    #     bash_command="echo 'Data ingestion pipeline completed successfully.'"
+    # )
 
     # Set the dependencies
 
@@ -122,13 +122,14 @@ with DAG(
                     scrape_onei_task, 
                     scrape_lifemobile_task,  
                     scrape_laptoplk_task
-                    # scrape_cyberdeals_task
-    ] >> delay_task >> setup_env_task >> load_staging_task >> [
-                                            transform_dim_date_task,
-                                            transform_dim_shop_task,
-                                            transform_dim_shop_product_task,
-                                            transform_dim_variant_task,
-                                            transform_dim_product_image_task,
-                                            transform_fact_product_price_task,
-                                            ] >> end_task
+                    # scrape_cyberdeals_task 
+                    ]
+    # ] >> delay_task >> setup_env_task >> load_staging_task >> [
+    #                                         transform_dim_date_task,
+    #                                         transform_dim_shop_task,
+    #                                         transform_dim_shop_product_task,
+    #                                         transform_dim_variant_task,
+    #                                         transform_dim_product_image_task,
+    #                                         transform_fact_product_price_task,
+    #                                         ] >> end_task
 

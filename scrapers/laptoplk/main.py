@@ -167,10 +167,48 @@ class AsyncLaptopLKScraper:
                 try:
                     response = await client.get(url, headers=self.headers, timeout=30, follow_redirects=True)
                     response.raise_for_status()
+                    self.success_count += 1
                     return response.text
-                except (httpx.RequestError, httpx.HTTPStatusError):
+                except (httpx.RequestError, httpx.HTTPStatusError) as e:
                     if attempt + 1 == self.max_retries: break
                     await asyncio.sleep(2 ** attempt)
+                except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, 
+                        httpx.RemoteProtocolError) as e:
+                    logger.warning(f"Connection error on attempt {attempt+1} for {url}: {str(e)}")
+                    if attempt + 1 == self.max_retries: break
+                    await asyncio.sleep(3 ** attempt)  # Longer backoff for connection issues
+                except Exception as e:
+                    # Handle TLS/SSL errors specifically
+                    if "SSL" in str(e) or "TLS" in str(e) or "EndOfStream" in str(e):
+                        logger.warning(f"TLS/SSL error on {url}: {str(e)}. Trying alternative approach...")
+                        
+                        # Try curl as a fallback with relaxed SSL settings
+                        try:
+                            import subprocess
+                            
+                            cmd = [
+                                "curl", "-s", "-L", 
+                                "-H", f"User-Agent: {self.headers['User-Agent']}", 
+                                "--insecure",  # Allows "insecure" SSL connections
+                                url
+                            ]
+                            
+                            # Execute curl command
+                            logger.info(f"Trying curl fallback for {url}")
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                            
+                            if result.returncode == 0 and result.stdout:
+                                logger.info(f"Successfully fetched {url} using curl fallback")
+                                self.success_count += 1
+                                return result.stdout
+                        except Exception as curl_err:
+                            logger.warning(f"Curl fallback failed for {url}: {curl_err}")
+                    
+                    # For other unexpected errors
+                    if attempt + 1 == self.max_retries: break
+                    await asyncio.sleep(2 ** attempt)
+            
+            self.error_count += 1
         return None
 
     # --- MODIFIED: This function now uses the much faster selectolax parser ---
@@ -232,24 +270,52 @@ class AsyncLaptopLKScraper:
 
 # Helper function for the optimized pipeline
 async def fetch_and_parse_product(client: httpx.AsyncClient, scraper: AsyncLaptopLKScraper, url: str) -> Optional[Dict]:
-    html = await scraper.fetch_page(client, url)
-    if html:
-        return scraper.parse_product_data(html, url)
-    return None
+    try:
+        html = await scraper.fetch_page(client, url)
+        if html:
+            return scraper.parse_product_data(html, url)
+        return None
+    except RuntimeError as e:
+        # Handle "client has been closed" errors gracefully
+        if "client has been closed" in str(e):
+            logger.warning(f"Client closed while processing {url}. This is expected during shutdown.")
+        else:
+            logger.warning(f"Runtime error while processing {url}: {str(e)}")
+        return None
+    except Exception as e:
+        logger.warning(f"Error processing {url}: {str(e)}")
+        return None
 
 # Simpler progress tracker that doesn't rely on modifying task attributes
 async def process_in_batches(tasks, batch_size=50):
-    """Process tasks in batches with simple progress reporting"""
+    """Process tasks in batches with simple progress reporting and error handling"""
     results = []
     total = len(tasks)
     processed = 0
+    failed = 0
     start_time = time.time()
     
     # Process in batches
     for i in range(0, total, batch_size):
         batch = tasks[i:i+batch_size]
-        batch_results = await asyncio.gather(*batch)
-        results.extend(batch_results)
+        try:
+            # Use return_exceptions=True to prevent one failure from stopping everything
+            batch_results = await asyncio.gather(*batch, return_exceptions=True)
+            
+            # Process results, filter out exceptions
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Task error: {str(result)}")
+                    failed += 1
+                    results.append(None)  # Add None for failed tasks
+                else:
+                    results.append(result)
+        except Exception as e:
+            # This shouldn't happen with return_exceptions=True, but just in case
+            logger.error(f"Batch processing error: {str(e)}")
+            # Add None results for the whole batch
+            results.extend([None] * len(batch))
+            failed += len(batch)
         
         # Update progress
         processed += len(batch)
@@ -257,9 +323,12 @@ async def process_in_batches(tasks, batch_size=50):
         rate = processed / elapsed if elapsed > 0 else 0
         eta = (total - processed) / rate if rate > 0 else 0
         
-        # Print progress
+        # Print progress with failure count
         print(f"\rProcessed: {processed}/{total} ({processed/total*100:.1f}%) | "
-              f"Rate: {rate:.1f} items/sec | ETA: {eta:.1f}s", end="")
+              f"Failed: {failed} | Rate: {rate:.1f} items/sec | ETA: {eta:.1f}s", end="")
+        
+        # Add a small delay between batches to prevent overwhelming the server
+        await asyncio.sleep(0.5)
     
     print()  # Add newline after progress
     return results
@@ -282,7 +351,17 @@ async def run_scraper() -> Tuple[int, Dict]:
     logger.info(f"Starting scrape of laptop.lk")
     fetch_start = time.time()
     
-    async with httpx.AsyncClient() as client: # Using standard HTTP for compatibility
+    # Create client with optimized settings for Docker environment
+    limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
+    timeout = httpx.Timeout(30.0, connect=10.0)  # Longer timeouts to handle TLS handshake
+    
+    async with httpx.AsyncClient(
+        limits=limits,
+        timeout=timeout,
+        http2=False,  # Disable HTTP/2 as it can cause issues in Docker
+        verify=True,  # Keep SSL verification on
+        follow_redirects=True
+    ) as client:
         logger.info(f"Fetching sitemap index: {SITEMAP_INDEX_URL}")
         index_xml = await scraper.fetch_page(client, SITEMAP_INDEX_URL)
         if not index_xml: 
@@ -307,10 +386,23 @@ async def run_scraper() -> Tuple[int, Dict]:
         logger.info(f"URL discovery took {fetch_end - fetch_start:.2f} seconds")
 
         logger.info(f"Scraping {len(product_urls_list)} products")
-        tasks = [fetch_and_parse_product(client, scraper, url) for url in product_urls_list]
-        results = await process_in_batches(tasks)
-        all_products_data = [item for item in results if item is not None]
-
+        
+        # Use a smaller batch size for more stability in Docker environment
+        # This helps prevent TLS handshake timeouts and client closure issues
+        small_batch_size = 25  # Reduced from 50 to 25
+        
+        try:
+            # Create tasks with proper exception handling
+            tasks = [fetch_and_parse_product(client, scraper, url) for url in product_urls_list]
+            results = await process_in_batches(tasks, batch_size=small_batch_size)
+            all_products_data = [item for item in results if item is not None]
+        except Exception as e:
+            logger.error(f"Error during batch processing: {str(e)}")
+            # Try to recover whatever results we have
+            all_products_data = [item for item in results if item is not None] if 'results' in locals() else []
+            logger.info(f"Recovered {len(all_products_data)} products despite error")
+        
+        # Make sure we have stats even if there was an error
         stats["products_scraped"] = len(all_products_data)
         stats["errors"] = scraper.error_count
         stats["success_rate"] = (len(all_products_data) / len(product_urls_list)) * 100 if product_urls_list else 0

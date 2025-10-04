@@ -15,6 +15,7 @@ from notification_service.bigquery_queries import get_price_changes
 from notification_service.supabase_queries import get_subscribed_users_supabase as get_subscribed_users
 from notification_service.email_service import send_notification_email
 
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -87,4 +88,14 @@ def run_notification_service():
 if __name__ == "__main__":
     # This allows the script to be run directly for testing
     load_dotenv()
+    
+    # Set up the credentials path if not already set
+    if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        credentials_path = os.path.abspath("gcp-credentials.json")
+        if os.path.exists(credentials_path):
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+            print(f"Set GOOGLE_APPLICATION_CREDENTIALS to {credentials_path}")
+        else:
+            print(f"Warning: Credentials file not found at {credentials_path}")
+    
     run_notification_service()

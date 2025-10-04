@@ -6,13 +6,15 @@ This module is responsible for finding products with price changes.
 import os
 from google.cloud import bigquery
 from typing import List, Dict
+from google.oauth2 import service_account
+import os.path
 
 def get_price_changes() -> List[Dict]:
     """
     Queries a BigQuery data warehouse to find products with price changes.
     
     This function:
-    1. Initializes the BigQuery client.
+    1. Initializes the BigQuery client with explicit credentials.
     2. Loads GCP_PROJECT_ID and BIGQUERY_DATASET_ID from environment variables.
     3. Constructs a SQL query that compares the latest price with the immediately preceding price for each variant.
     4. The SQL query uses the LAG() window function over a partition of variant_id, ordered by date_id.
@@ -34,8 +36,28 @@ def get_price_changes() -> List[Dict]:
         print("Error: Missing required environment variables (PROJECT_ID, WAREHOUSE)")
         return []
     
-    # Initialize the BigQuery client
-    client = bigquery.Client()
+    # Get credentials file path from environment variable or use default
+    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "gcp-credentials.json")
+    
+    # Check if the credentials file exists
+    if not os.path.isfile(credentials_path):
+        print(f"Error: Credentials file not found at {credentials_path}")
+        return []
+        
+    print(f"Using Google Cloud credentials from: {credentials_path}")
+    
+    try:
+        # Initialize credentials from the service account file
+        credentials = service_account.Credentials.from_service_account_file(
+            credentials_path,
+            scopes=["https://www.googleapis.com/auth/bigquery"]
+        )
+        
+        # Initialize the BigQuery client with explicit credentials
+        client = bigquery.Client(credentials=credentials, project=gcp_project_id)
+    except Exception as e:
+        print(f"Error initializing BigQuery client with credentials: {str(e)}")
+        return []
     
     # Construct the SQL query using window functions to compare current and previous prices
     sql_query = f"""

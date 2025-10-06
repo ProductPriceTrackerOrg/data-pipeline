@@ -55,6 +55,10 @@ If you encounter a "ModuleNotFoundError" in your DAGs or scrapers:
    docker-compose build && docker-compose up -d
    ```
 3. Check if the package was installed correctly:
+
    ```bash
    docker-compose exec airflow-worker pip list | grep package_name
+
+
+   docker compose exec airflow-worker bash -c "python /opt/airflow/init_gcp_creds.py"
    ```

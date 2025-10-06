@@ -76,3 +76,4 @@ credentials/
 *.key
 *.pem
 
+schema.txt

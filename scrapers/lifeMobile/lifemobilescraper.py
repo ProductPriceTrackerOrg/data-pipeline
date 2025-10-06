@@ -2,7 +2,7 @@ import scrapy
 from scrapy.crawler import CrawlerProcess
 from scrapy.http import Request
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 import random
 import time
@@ -229,9 +229,13 @@ class LifeMobileSpider(scrapy.Spider):
                 "span.posted_in a::text, nav.woocommerce-breadcrumb a::text"
             ).getall()[1:]
 
+            # Get all image URLs
             image_urls = response.css("div.woocommerce-product-gallery img::attr(src)").getall()
             if not image_urls:
                 image_urls = response.css("img.wp-post-image::attr(src)").getall()
+                
+            # Filter to only include URLs that start with http or https
+            image_urls = [url for url in image_urls if url and (url.startswith('http://') or url.startswith('https://'))]
 
             availability = response.css("p.stock::text").get(default="In stock").strip()
 
@@ -377,9 +381,9 @@ class LifeMobileSpider(scrapy.Spider):
                 "payment_options": payment_options,
                 "metadata": {
                     "source_website": "lifemobile.lk",
-                    "shop_contact_phone": "011 2322511",
-                    "shop_contact_whatsapp": "077 7060616 / 077 55 77 115",
-                    "scrape_timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                    "shop_contact_phone": "+9411 2322511",
+                    "shop_contact_whatsapp": "+9477 7060616",
+                    "scrape_timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds") + "Z",
                 },
             }
 
@@ -400,7 +404,9 @@ class LifeMobileSpider(scrapy.Spider):
 
     def errback_handler(self, failure):
         self.error_count += 1
-        if failure.check(scrapy.exceptions.HttpError) and failure.value.response.status == 429:
+        # Use the correct import for HttpError from spidermiddlewares
+        from scrapy.spidermiddlewares.httperror import HttpError
+        if failure.check(HttpError) and failure.value.response.status == 429:
             # Handle rate limiting if needed
             pass
 

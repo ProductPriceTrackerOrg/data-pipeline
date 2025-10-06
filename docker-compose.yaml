@@ -61,6 +61,9 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
     AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+    PROJECT_ID: "price-pulse-470211"
+    WAREHOUSE: "warehouse"
+    GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp-credentials.json
     # yamllint disable rule:line-lengths
     # Use simple http server on scheduler for health checks
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
@@ -69,7 +72,7 @@ x-airflow-common: &airflow-common
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
 
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-Brotli==1.1.0 aiohttp[speedups] Scrapy nest-asyncio==1.5.6 selectolax==0.3.17}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-Brotli==1.1.0 aiohttp[speedups] Scrapy nest-asyncio==1.5.6 selectolax==0.3.17 google-cloud-bigquery==3.11.4 google-auth==2.23.0 xxhash httpx[http2]}
 
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
@@ -81,9 +84,11 @@ x-airflow-common: &airflow-common
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/scrapers:/opt/airflow/scrapers
     - ${AIRFLOW_PROJ_DIR:-.}/store:/opt/airflow/store
-    - ${AIRFLOW_PROJ_DIR:-.}/store:/opt/airflow/store
     - ${AIRFLOW_PROJ_DIR:-.}/transformations:/opt/airflow/transformations
-    
+    - ${AIRFLOW_PROJ_DIR:-.}/product_categorization:/opt/airflow/product_categorization
+    - ${AIRFLOW_PROJ_DIR:-.}/gcp-credentials.json:/opt/airflow/gcp-credentials.json:ro
+    - ${AIRFLOW_PROJ_DIR:-.}/init_gcp_creds.py:/opt/airflow/init_gcp_creds.py
+
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on
     redis:

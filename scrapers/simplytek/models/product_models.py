@@ -33,14 +33,16 @@ class ProductVariant(BaseModel):
             raise ValueError('variant_title cannot be empty')
         return str(v).strip()
 
+def utc_now():
+    return datetime.now(timezone.utc)
 
 class ProductMetadata(BaseModel):
     """Model for product metadata"""
     source_website: str = Field(..., description="Source website URL")
     shop_contact_phone: Optional[str] = Field(None, description="Shop contact phone number")
     shop_contact_whatsapp: Optional[str] = Field(None, description="Shop WhatsApp contact")
-    scrape_timestamp: datetime = Field(default_factory=datetime.now(timezone.utc), description="Timestamp when data was scraped")
-    
+    scrape_timestamp: datetime = Field(default_factory=utc_now, description="Timestamp when data was scraped")
+
     class Config:
         json_encoders = {
             datetime: lambda v: v.isoformat()

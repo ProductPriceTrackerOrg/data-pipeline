@@ -189,8 +189,10 @@ class One1LKSpider(scrapy.Spider):
         url = failure.request.url
         logger.error(f"Failed to process {url}: {failure.value}")
         
+        # Use the correct import for HttpError from spidermiddlewares
+        from scrapy.spidermiddlewares.httperror import HttpError
         # Handle rate limiting
-        if failure.check(scrapy.exceptions.HttpError) and failure.value.response.status == 429:
+        if failure.check(HttpError) and failure.value.response.status == 429:
             self.rate_limit_delay = min(self.rate_limit_delay * 1.5, 10.0)
             logger.warning(f"Rate limited, increasing delay to {self.rate_limit_delay:.2f}s")
     

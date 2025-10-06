@@ -26,7 +26,7 @@ def send_notification_email(user_email: str, product: dict) -> bool:
     """
     # Get the API Key and sender email from environment variables
     sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
-    sender_email = os.getenv("SENDER_EMAIL", "alerts@pricepulse.lk") 
+    sender_email = os.getenv("SENDER_EMAIL", "pricepulse09@gmail.com") 
     
     if not sendgrid_api_key:
         print(f"Error: SENDGRID_API_KEY environment variable not set. Cannot send email to {user_email}.")

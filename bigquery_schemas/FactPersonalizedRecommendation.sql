@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS `price-pulse-470211.warehouse.FactPersonalizedRecommendation` (
   recommendation_id INT64 NOT NULL,             -- Primary key
-  user_id INT64 NOT NULL,                       -- The ID of the user (from the User Database)
+  user_id STRING NOT NULL,                       -- The ID of the user (from the User Database)
   recommended_variant_id INT64 NOT NULL,        -- Foreign key to DimVariant
   model_id INT64 NOT NULL,                      -- Foreign key to DimModel
   recommendation_score FLOAT64,                 -- Recommendation score

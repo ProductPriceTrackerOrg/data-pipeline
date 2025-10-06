@@ -56,7 +56,7 @@ class BigQueryStore:
             write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
             schema=[
                 bigquery.SchemaField("recommendation_id", "INT64"),
-                bigquery.SchemaField("user_id", "INT64"),
+                bigquery.SchemaField("user_id", "STRING"),
                 bigquery.SchemaField("recommended_variant_id", "INT64"),
                 bigquery.SchemaField("model_id", "INT64"),
                 bigquery.SchemaField("recommendation_score", "FLOAT64"),

@@ -192,18 +192,87 @@ class AsyncLaptopLKScraper:
             desc_node = product_container.css_first("div#tab-description, div.woocommerce-tabs")
             description_html = desc_node.html if desc_node else None
 
+            # Try the standard category selector first
             category_nodes = product_container.css("span.posted_in a")
             all_categories = [node.text(strip=True) for node in category_nodes]
+            
+            # If no categories found, try alternative selectors
+            if not all_categories:
+                logger.debug("No categories found with standard selector, trying alternative...")
+                # Look for any tag links in the page (common alternative location)
+                alt_category_nodes = tree.css("a[rel='tag']")
+                if alt_category_nodes:
+                    all_categories = [node.text(strip=True) for node in alt_category_nodes]
+                    logger.debug(f"Found {len(all_categories)} categories with alternative selector")
+            
+            # Extract brand and category path
             brand = next((cat for cat in all_categories if cat.lower() in ['hp', 'dell', 'apple', 'lenovo', 'asus', 'msi', 'acer', 'samsung']), None)
             category_path = [c for c in all_categories if c.lower() != (brand or '').lower()]
 
             image_nodes = product_container.css("div.woocommerce-product-gallery__image a")
             image_urls = [node.attributes.get('href') for node in image_nodes]
 
-            price_curr_node = product_container.css_first("p.price ins .amount, span.electro-price ins .amount, p.price > .amount, span.electro-price > .amount")
-            price_orig_node = product_container.css_first("p.price del .amount, span.electro-price del .amount")
-            price_current = re.sub(r'[^\d.]', '', price_curr_node.text(strip=True)) if price_curr_node else "0"
-            price_original = re.sub(r'[^\d.]', '', price_orig_node.text(strip=True)) if price_orig_node else None
+            # Extract prices - check payment methods section first (most reliable for actual price)
+            payment_elements = tree.css("div.yith-wapo-block[data-block-name*='Payment Methods'] .yith-wapo-option-price .woocommerce-Price-amount")
+            if payment_elements:
+                prices = []
+                for el in payment_elements:
+                    price_text = el.text(strip=True)
+                    clean_price = re.sub(r'[^0-9.]', '', price_text)
+                    if clean_price:
+                        prices.append(clean_price)
+                
+                if prices:
+                    price_current = min(prices)  # Use lowest price (usually the cash price)
+                else:
+                    # Fallback to product actions section
+                    price_curr_node = product_container.css_first("div.product-actions .price .woocommerce-Price-amount")
+                    if price_curr_node:
+                        price_text = price_curr_node.text(strip=True)
+                        price_current = re.sub(r'[^0-9.]', '', price_text)
+                        price_current = "null" if not price_current else price_current
+                    else:
+                        price_current = "null"
+            else:
+                # Fallback to product actions section
+                price_curr_node = product_container.css_first("div.product-actions .price .woocommerce-Price-amount")
+                if not price_curr_node:
+                    # Fallback to original selectors
+                    price_curr_node = product_container.css_first("p.price ins .amount, span.electro-price ins .amount, p.price > .amount, span.electro-price > .amount, .summary .price .woocommerce-Price-amount")
+                
+                # Check if price was found
+                if price_curr_node:
+                    # Extract price from the node
+                    price_text = price_curr_node.text(strip=True)
+                    price_current = re.sub(r'[^0-9.]', '', price_text)
+                    # If the price is empty after cleaning (e.g., just currency symbol), set to "null"
+                    price_current = "null" if not price_current else price_current
+                else:
+                    # No price element found at all, set to "null"
+                    price_current = "null"
+                    logger.debug("No price element found for product, setting current price to null")
+            
+            # Look for original (deleted) price
+            # We need to be very specific with the selector to avoid false positives
+            # First check if there's an "ins" element (indicating there's a sale)
+            # because original prices only make sense when there's an active discount
+            has_discount = product_container.css_first("div.product-actions .price ins") is not None
+            
+            price_original = None
+            if has_discount:
+                # Only look for original price if there's an active discount
+                price_orig_node = product_container.css_first("div.product-actions .price del .woocommerce-Price-amount")
+                if not price_orig_node:
+                    # These more specific selectors help avoid false positives
+                    price_orig_node = product_container.css_first("p.price del .woocommerce-Price-amount, span.electro-price del .woocommerce-Price-amount")
+                
+                if price_orig_node:
+                    price_text = price_orig_node.text(strip=True)
+                    price_original = re.sub(r'[^0-9.]', '', price_text)
+                    logger.debug(f"Found original price: {price_text} -> {price_original}")
+            
+            if price_original is None:
+                logger.debug("No original price found or no discount active")
 
             availability_text = "Out of Stock" if product_container.css_first("p.stock.out-of-stock") else "In Stock"
 
@@ -212,7 +281,10 @@ class AsyncLaptopLKScraper:
             if warranty_img and 'alt' in warranty_img.attributes:
                 warranty_text = warranty_img.attributes['alt'].replace('Year-warranty', ' Year Warranty').replace('-', ' ')
 
-            variants = [{"variant_id_native": product_id, "variant_title": "Default", "price_current": price_current, "price_original": price_original, "currency": "LKR", "availability_text": availability_text}]
+            # If original price is None, set it to "null" (as a string) for JSON serialization
+            final_original_price = "null" if price_original is None else price_original
+            
+            variants = [{"variant_id_native": product_id, "variant_title": "Default", "price_current": price_current, "price_original": final_original_price, "currency": "LKR", "availability_text": availability_text}]
             
             self.success_count += 1
             return {"product_id_native": product_id, "product_url": url, "product_title": title, "warranty": warranty_text, "description_html": description_html, "brand": brand, "category_path": category_path, "image_urls": image_urls, "variants": variants, "metadata": {"source_website": self.source_website, "shop_contact_phone": self.shop_phone,"shop_contact_whatsapp": self.shop_whatsapp, "scrape_timestamp": self.scrape_timestamp}}

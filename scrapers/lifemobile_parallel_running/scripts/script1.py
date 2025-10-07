@@ -59,8 +59,8 @@ class LifeMobileSpider(scrapy.Spider):
         self.category_urls = set()
         self.product_urls = set()
         self.error_count = 0
-        self.max_products = 10000  # Reduced for testing
-        self.max_runtime = 7200  # 1 hour maximum runtime
+        self.max_products = 10000 # Reduced for testing
+        self.max_runtime = 120 # 1 hour maximum runtime
 
     def filter_valid_image_urls(self, image_urls):
         """Filter image URLs to only include valid webp, jpg, png formats"""

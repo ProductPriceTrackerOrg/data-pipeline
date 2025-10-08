@@ -127,9 +127,9 @@ class LifeMobileDataMerger:
         return unique_products
 
     def enhance_product_data(self, product: Dict) -> Dict:
-        """Add additional metadata and clean up product data"""
-        # Ensure all required fields exist
-        enhanced_product = {
+        """Clean up product data - keep only essential product fields"""
+        # Return only the core product data without any merge metadata
+        clean_product = {
             "product_id_native": product.get("product_id_native", ""),
             "product_url": product.get("product_url", ""),
             "product_title": product.get("product_title", ""),
@@ -139,23 +139,15 @@ class LifeMobileDataMerger:
             "specifications": product.get("specifications", {}),
             "image_urls": product.get("image_urls", []),
             "variants": product.get("variants", []),
-            "metadata": product.get("metadata", {}),
         }
 
-        # Add merge metadata
-        if "metadata" not in enhanced_product:
-            enhanced_product["metadata"] = {}
+        # Clean up empty fields (set to null instead of empty)
+        if not clean_product["description_html"]:
+            clean_product["description_html"] = None
+        if not clean_product["brand"]:
+            clean_product["brand"] = None
 
-        enhanced_product["metadata"]["merged_at"] = datetime.now().isoformat()
-        enhanced_product["metadata"]["merger_version"] = "1.0"
-
-        # Clean up empty fields
-        if not enhanced_product["description_html"]:
-            enhanced_product["description_html"] = None
-        if not enhanced_product["brand"]:
-            enhanced_product["brand"] = None
-
-        return enhanced_product
+        return clean_product
 
     def generate_summary_statistics(self, products: List[Dict]) -> Dict:
         """Generate comprehensive statistics about the merged data"""
@@ -428,20 +420,8 @@ class LifeMobileDataMerger:
         logger.info("Generating statistics...")
         summary_stats = self.generate_summary_statistics(enhanced_products)
 
-        # Create final output structure
-        final_output = {
-            "metadata": {
-                "source_website": "lifemobile.lk",
-                "merge_timestamp": self.statistics["merge_timestamp"],
-                "total_products": len(enhanced_products),
-                "scraping_method": "Scrapy parallel execution",
-                "merger_version": "1.0",
-                "input_files": self.input_files,
-                "merge_statistics": self.statistics,
-            },
-            "summary_statistics": summary_stats,
-            "products": enhanced_products,
-        }
+        # Create final output structure - ONLY PRODUCTS (no metadata)
+        final_output = enhanced_products
 
         # Save merged file
         try:
@@ -516,33 +496,54 @@ def main():
                 logger.error(f"❌ JSON validation failed: {e}")
                 return 1
 
-            # Upload to ADLS
-            upload_success = merger.upload_to_adls(
-                json_data=json_data, source_website="lifemobile.lk"
+            # Check if this is test data (skip upload for test data)
+            is_test_data = any(
+                product.get("product_id_native", "").startswith("test-")
+                for product in merged_data[:3]  # Check first 3 products
             )
 
+            if is_test_data:
+                logger.info("🧪 TEST DATA DETECTED - Skipping Azure upload")
+                logger.info("💡 Test data will not be uploaded to production data lake")
+                upload_success = True  # Simulate successful upload for test purposes
+            else:
+                # Upload to ADLS (only for real production data)
+                upload_success = merger.upload_to_adls(
+                    json_data=json_data, source_website="lifemobile.lk"
+                )
+
             if upload_success:
-                logger.info(
-                    "\n🎉 Data successfully uploaded to Azure Data Lake Storage!"
-                )
+                if is_test_data:
+                    logger.info(
+                        "\n🧪 Test data merge completed successfully (NO UPLOAD)"
+                    )
+                    logger.info("💡 Test data was not uploaded to Azure Data Lake")
+                else:
+                    logger.info(
+                        "\n🎉 Data successfully uploaded to Azure Data Lake Storage!"
+                    )
                 logger.info(f"📊 Final Summary:")
-                logger.info(
-                    f"   📦 Products uploaded: {merged_data['metadata']['total_products']:,}"
-                )
+                logger.info(f"   📦 Products processed: {len(merged_data):,}")
                 logger.info(f"   💾 Data size: {len(json_data) / (1024*1024):.2f} MB")
 
-                # Double-check upload success before cleanup
-                logger.info("\n🔍 Double-checking upload success before cleanup...")
-                time.sleep(2)  # Brief pause to ensure upload is fully completed
+                if not is_test_data:
+                    # Double-check upload success before cleanup (only for real data)
+                    logger.info("\n🔍 Double-checking upload success before cleanup...")
+                    time.sleep(2)  # Brief pause to ensure upload is fully completed
 
-                # Step 3: Cleanup all data files (ONLY after confirmed successful upload)
-                logger.info("\n" + "=" * 60)
-                logger.info("STEP 3: CLEANING UP ALL DATA FILES")
-                logger.info("=" * 60)
-                logger.info(
-                    "⚠️  IMPORTANT: Files will be permanently deleted after successful Azure upload"
-                )
-                merger.cleanup_all_files()
+                    # Step 3: Cleanup all data files (ONLY after confirmed successful upload)
+                    logger.info("\n" + "=" * 60)
+                    logger.info("STEP 3: CLEANING UP ALL DATA FILES")
+                    logger.info("=" * 60)
+                    logger.info(
+                        "⚠️  IMPORTANT: Files will be permanently deleted after successful Azure upload"
+                    )
+                    merger.cleanup_all_files()
+                else:
+                    logger.info(
+                        "\n🧪 TEST MODE: Skipping file cleanup to preserve test data"
+                    )
+                    logger.info("💡 Test files remain for inspection")
 
                 logger.info("\n" + "=" * 60)
                 logger.info("✅ ALL STEPS COMPLETED SUCCESSFULLY!")

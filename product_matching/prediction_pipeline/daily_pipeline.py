@@ -7,7 +7,7 @@ import numpy as np
 import logging
 import sys
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from .product_matcher import ProductMatcher
 from .model_loader import model_loader
 from .config import *
@@ -23,28 +23,23 @@ class DailyPipeline:
         self.model_loader = model_loader
         self.run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    def load_new_products(self, csv_path: str) -> pd.DataFrame:
-        """Load new products to be processed"""
-        logger.info(f"Loading new products from: {csv_path}")
-        
-        try:
-            df = pd.read_csv(csv_path)
-        except FileNotFoundError:
-            logger.error(f"New products file not found: {csv_path}")
-            return pd.DataFrame()
+    def load_new_products(self, new_products_df: pd.DataFrame) -> pd.DataFrame:
+        """Load and validate new products DataFrame"""
+        logger.info(f"Validating {len(new_products_df)} new products")
         
         # Validate required columns
         required_columns = ['product_id', 'product_title']
-        missing_columns = [col for col in required_columns if col not in df.columns]
+        missing_columns = [col for col in required_columns if col not in new_products_df.columns]
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
         
         # Clean data
+        df = new_products_df.copy()
         df = df.dropna(subset=['product_title'])
         df['product_title'] = df['product_title'].astype(str).str.strip()
         df = df[df['product_title'] != '']
         
-        logger.info(f"Loaded {len(df)} new products for processing")
+        logger.info(f"Validated {len(df)} products for processing")
         return df
     
     def process_new_products(self, new_products_df: pd.DataFrame) -> pd.DataFrame:
@@ -54,26 +49,31 @@ class DailyPipeline:
             return pd.DataFrame(columns=['match_group_id', 'shop_product_id', 'confidence_score'])
         
         # Load artifacts
+        logger.info("Loading FAISS index and model artifacts...")
         self.matcher.load_artifacts()
         
         # Extract product information
         product_ids = new_products_df['product_id'].tolist()
         product_titles = new_products_df['product_title'].tolist()
         
+        logger.info(f"Processing {len(product_ids)} products...")
+        
         # Generate embeddings
         embeddings = self.model_loader.generate_embeddings(product_titles)
+        logger.info(f"Generated embeddings with shape: {embeddings.shape}")
         
         # Find matches
         results = self.matcher.find_matches(embeddings, product_ids)
+        logger.info(f"Found {len(results)} match results")
         
         # Convert to DataFrame
         results_df = self.matcher.results_to_dataframe(results)
         
         # Update index with new products
+        logger.info("Updating FAISS index with new products...")
         self.matcher.update_index(embeddings, product_ids)
         
         return results_df
-    
     
     def generate_summary_report(self, results_df: pd.DataFrame) -> dict:
         """Generate summary report of daily processing"""
@@ -101,22 +101,30 @@ class DailyPipeline:
             'unique_groups_total': results_df['match_group_id'].nunique()
         }
     
-    def run_daily_pipeline(self, new_products_csv: str) -> dict:
-        """Run the complete daily pipeline"""
+    def run_daily_pipeline(self, new_products_df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
+        """
+        Run the complete daily pipeline
+        
+        Args:
+            new_products_df: DataFrame with product_id and product_title columns
+            
+        Returns:
+            Tuple of (results_df, summary_dict)
+        """
         logger.info("Starting daily pipeline execution")
         
         try:
-            # Load new products
-            new_products_df = self.load_new_products(new_products_csv)
+            # Validate and clean new products
+            cleaned_df = self.load_new_products(new_products_df)
             
             # Process products and find matches
-            results_df = self.process_new_products(new_products_df)
+            results_df = self.process_new_products(cleaned_df)
             
             # Generate summary
             summary = self.generate_summary_report(results_df)
             
             logger.info("Daily pipeline completed successfully")
-            return summary
+            return results_df, summary
             
         except Exception as e:
             logger.error(f"Daily pipeline failed: {e}")
@@ -131,8 +139,11 @@ def main():
     new_products_csv = sys.argv[1]
     
     try:
+        # Load CSV
+        new_products_df = pd.read_csv(new_products_csv)
+        
         pipeline = DailyPipeline()
-        summary = pipeline.run_daily_pipeline(new_products_csv)
+        results_df, summary = pipeline.run_daily_pipeline(new_products_df)
         
         # Print summary report
         print("\n" + "="*50)
@@ -146,6 +157,7 @@ def main():
         print(f"Total Unique Groups: {summary.get('unique_groups_total', 'N/A')}")
         print("="*50)
         
+        print(f"\nResults DataFrame shape: {results_df.shape}")
         print("Daily pipeline completed successfully!")
         
     except Exception as e:

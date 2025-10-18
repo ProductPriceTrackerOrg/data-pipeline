@@ -316,13 +316,14 @@ class LifeMobileDataMerger:
             return False
 
     def cleanup_all_files(self) -> None:
-        """Delete all JSON files, CSV files, and completion markers after successful upload"""
-        files_to_delete = self.input_files + [self.output_file]
+        """Delete all JSON files, CSV files, and completion markers after successful upload (but keep the merged file)"""
+        files_to_delete = self.input_files.copy()  # Only delete input files, NOT the merged output file
 
         # Check for any lifemobile-related JSON files
         for file in os.listdir("."):
             if file.startswith("lifemobile_products_") and file.endswith(".json"):
-                if file not in files_to_delete:
+                # Skip the merged output file - keep it for reference
+                if file != self.output_file and file not in files_to_delete:
                     files_to_delete.append(file)
             # Also check for CSV files that might have been generated
             elif file.startswith("lifemobile_products_") and file.endswith(".csv"):
@@ -355,6 +356,7 @@ class LifeMobileDataMerger:
                     files_to_delete.append(file)
 
         logger.info(f"🗑️ Found {len(files_to_delete)} files to delete")
+        logger.info(f"💾 Keeping merged file: {self.output_file}")
 
         deleted_count = 0
         for file_path in files_to_delete:
@@ -372,7 +374,7 @@ class LifeMobileDataMerger:
                 logger.debug(f"📂 File not found (already deleted?): {file_path}")
 
         if deleted_count > 0:
-            logger.info(f"✅ Cleanup complete: {deleted_count} files deleted")
+            logger.info(f"✅ Cleanup complete: {deleted_count} files deleted (merged file preserved)")
         else:
             logger.info("📂 No files to clean up")
 
@@ -533,17 +535,17 @@ def main():
 
                     # Step 3: Cleanup all data files (ONLY after confirmed successful upload)
                     logger.info("\n" + "=" * 60)
-                    logger.info("STEP 3: CLEANING UP ALL DATA FILES")
+                    logger.info("STEP 3: CLEANING UP DATA FILES")
                     logger.info("=" * 60)
                     logger.info(
-                        "⚠️  IMPORTANT: Files will be permanently deleted after successful Azure upload"
+                        "⚠️  IMPORTANT: Input files will be deleted but merged file will be preserved"
                     )
                     merger.cleanup_all_files()
                 else:
                     logger.info(
                         "\n🧪 TEST MODE: Skipping file cleanup to preserve test data"
                     )
-                    logger.info("💡 Test files remain for inspection")
+                    logger.info("💡 Test files remain for inspection (including merged file)")
 
                 logger.info("\n" + "=" * 60)
                 logger.info("✅ ALL STEPS COMPLETED SUCCESSFULLY!")

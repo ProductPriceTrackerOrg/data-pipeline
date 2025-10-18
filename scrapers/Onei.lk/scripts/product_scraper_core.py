@@ -7,6 +7,7 @@ import random
 import logging
 from datetime import datetime, timezone
 from scrapy.http import Request
+from utils.scraper_utils import filter_valid_image_urls
 
 # Configure logging directly here to avoid import issues
 logging.basicConfig(
@@ -129,16 +130,40 @@ class One1LKSpider(scrapy.Spider):
             response.css("span.posted_in a::text").getall()
             or response.css("nav.woocommerce-breadcrumb a::text").getall()[1:]
         )
+        # Extract image URLs from multiple sources
         image_selectors = response.css(
             "img.wp-post-image, img.attachment-woocommerce_thumbnail, div.wd-carousel-item a[href]"
         )
-        image_urls = list(
+        raw_image_urls = list(
             set(
                 img.attrib.get("src", img.attrib.get("href", ""))
                 for img in image_selectors
                 if img.attrib.get("src") or img.attrib.get("href")
             )
         )
+
+        # Also try gallery images and other common selectors
+        gallery_images = response.css(
+            "div.woocommerce-product-gallery img::attr(src), "
+            "div.woocommerce-product-gallery img::attr(data-src), "
+            "div.product-images img::attr(src), "
+            "div.product-gallery img::attr(src)"
+        ).getall()
+
+        raw_image_urls.extend(gallery_images)
+
+        # Filter to only valid image formats (webp, jpg, png, jpeg)
+        image_urls = filter_valid_image_urls(raw_image_urls)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        image_urls = [url for url in image_urls if not (url in seen or seen.add(url))]
+
+        # Log image filtering results for debugging
+        if len(raw_image_urls) != len(image_urls):
+            logger.debug(
+                f"Filtered images: {len(raw_image_urls)} -> {len(image_urls)} for {response.url}"
+            )
 
         variants = []
         is_variable = "product-type-variable" in response.css("body").attrib.get(
@@ -242,10 +267,8 @@ class One1LKSpider(scrapy.Spider):
 
         # Use the correct import for HttpError from spidermiddlewares
         from scrapy.spidermiddlewares.httperror import HttpError
-        if (
-            failure.check(HttpError)
-            and failure.value.response.status == 429
-        ):
+
+        if failure.check(HttpError) and failure.value.response.status == 429:
             self.rate_limit_delay = min(self.rate_limit_delay * 1.5, 10.0)
             logger.warning(
                 f"Rate limited, increasing delay to {self.rate_limit_delay:.2f}s"

@@ -10,6 +10,13 @@ from dotenv import load_dotenv  # Make sure to install: pip install python-doten
 import logging
 from datetime import datetime
 
+# Ensure package imports work when running this file directly
+if __package__ is None:
+    package_root = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(package_root)
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
 # Import the functions from the other modules
 from notification_service.bigquery_queries import get_price_changes
 from notification_service.supabase_queries import get_subscribed_users_supabase as get_subscribed_users

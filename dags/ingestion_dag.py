@@ -5,6 +5,8 @@ import pendulum
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import PythonOperator
+from plugins.supabase_logger import log_pipeline_run
 
 with DAG(
     dag_id="daily_data_ingestion",
@@ -16,6 +18,8 @@ with DAG(
     This DAG runs the scrapers for all e-commerce sites and initiates the Bronze layer creation.
     """,
     tags=["ingestion", "bronze"],
+    on_success_callback=log_pipeline_run,  # Add this line to log successful runs
+    on_failure_callback=log_pipeline_run,  # Add this line to log failed runs
 ) as dag:
     # Dummy start task for better visualization
     start_task = BashOperator(

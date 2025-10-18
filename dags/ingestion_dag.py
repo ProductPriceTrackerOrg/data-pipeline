@@ -5,8 +5,6 @@ import pendulum
 from airflow.models.dag import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import PythonOperator
-from plugins.supabase_logger import log_pipeline_run
 
 with DAG(
     dag_id="daily_data_ingestion",
@@ -18,8 +16,6 @@ with DAG(
     This DAG runs the scrapers for all e-commerce sites and initiates the Bronze layer creation.
     """,
     tags=["ingestion", "bronze"],
-    on_success_callback=log_pipeline_run,  # Add this line to log successful runs
-    on_failure_callback=log_pipeline_run,  # Add this line to log failed runs
 ) as dag:
     # Dummy start task for better visualization
     start_task = BashOperator(
@@ -28,10 +24,10 @@ with DAG(
     )
 
     # Task to run the AppleMe scraper
-    # scrape_appleme_task = BashOperator(
-    #     task_id="scrape_appleme",
-    #     bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
-    # )
+    scrape_appleme_task = BashOperator(
+        task_id="scrape_appleme",
+        bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
+    )
 
     # Task to run the SimplyTek scraper
     scrape_simplytek_task = BashOperator(
@@ -40,16 +36,16 @@ with DAG(
     )
 
     # Task to run the Onei.lk scraper
-    # scrape_onei_task = BashOperator(
-    #     task_id="scrape_onei",
-    #     bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
-    # )
+    scrape_onei_task = BashOperator(
+        task_id="scrape_onei",
+        bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
+    )
 
     # Task to run the lifeMobile scraper
-    # scrape_lifemobile_task = BashOperator(
-    #     task_id="scrape_lifemobile",
-    #     bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
-    # )
+    scrape_lifemobile_task = BashOperator(
+        task_id="scrape_lifemobile",
+        bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
+    )
 
     # # Task to run the CyberDeals scraper
     # scrape_cyberdeals_task = BashOperator(
@@ -58,16 +54,16 @@ with DAG(
     # )
     
     # Task to run the laptops.lk scraper
-    # scrape_laptoplk_task = BashOperator(
-    #     task_id="scrape_laptoplk",
-    #     bash_command="cd /opt/airflow/scrapers/laptoplk && python -u main.py",
-    # )
+    scrape_laptoplk_task = BashOperator(
+        task_id="scrape_laptoplk",
+        bash_command="cd /opt/airflow/scrapers/laptoplk && python -u main.py",
+    )
     
     # Delay task (20 seconds)
-    # delay_task = BashOperator(
-    #     task_id="delay",
-    #     bash_command="sleep 10",
-    # )
+    delay_task = BashOperator(
+        task_id="delay",
+        bash_command="sleep 10",
+    )
 
     # # environment setup task docker compose exec airflow-worker bash -c "python /opt/airflow/init_gcp_creds.py" 
     # setup_env_task = BashOperator(
@@ -121,11 +117,11 @@ with DAG(
     # Set the dependencies
 
     start_task >> [
-                    # scrape_appleme_task, 
+                    scrape_appleme_task, 
                     scrape_simplytek_task, 
-                    # scrape_onei_task, 
-                    # scrape_lifemobile_task,  
-                    # scrape_laptoplk_task
+                    scrape_onei_task, 
+                    scrape_lifemobile_task,  
+                    scrape_laptoplk_task
                     # scrape_cyberdeals_task 
                     ]
     # ] >> delay_task >> setup_env_task >> load_staging_task >> [

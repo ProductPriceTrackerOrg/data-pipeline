@@ -49,19 +49,6 @@ def create_bigquery_client(project_id: str = "price-pulse-470211") -> bigquery.C
     Returns:
         Configured BigQuery client
     """
-    # Set up credentials from the service account file
-    import os
-    from pathlib import Path
-    
-    # Look for the credentials file in the project root
-    project_root_path = Path(__file__).parent.parent.parent.parent
-    credentials_path = project_root_path / "gcp-credentials.json"
-    if credentials_path.exists():
-        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(credentials_path)
-        logger.info(f"Using service account credentials from: {credentials_path}")
-    else:
-        logger.warning("No credentials file found at project root. Authentication may fail.")
-        
     return bigquery.Client(project=project_id)
 
 def execute_query(client: bigquery.Client, query: str) -> List[Dict]:

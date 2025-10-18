@@ -37,19 +37,11 @@ logger = logging.getLogger(__name__)
 class BigQueryLoader:
     def __init__(self, project_id: str = None, staging_dataset: str = None):
         """Initialize BigQuery loader with ADLS integration"""
-        # Set the environment variable to point to the credentials file
-        # First, try to find the credentials file path
-        credentials_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-        if not credentials_path:
-            # Look for the credentials file in the project root
-            project_root_path = Path(__file__).parent.parent.parent.parent
-            possible_creds_path = project_root_path / "gcp-credentials.json"
-            if possible_creds_path.exists():
-                credentials_path = str(possible_creds_path)
-                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
-                logger.info(f"Using service account credentials from: {credentials_path}")
-            else:
-                logger.warning("No credentials file found at project root")
+        # Use default credentials (from gcloud auth) for better compatibility
+        old_creds = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        if old_creds:
+            logger.info("Using gcloud default credentials instead of service account file")
+            os.environ.pop('GOOGLE_APPLICATION_CREDENTIALS', None)
         
         self.project_id = project_id or os.getenv("BIGQUERY_PROJECT_ID", "price-pulse-470211")
         self.staging_dataset = staging_dataset or os.getenv("BIGQUERY_STAGING_DATASET", "staging")
@@ -60,7 +52,7 @@ class BigQueryLoader:
             logger.info(f"BigQuery client initialized for {self.project_id}")
         except Exception as e:
             logger.error(f"❌ Failed to initialize BigQuery client: {e}")
-            logger.info("Make sure you have valid GCP credentials in gcp-credentials.json")
+            logger.info("Make sure you've run: gcloud auth application-default login")
             raise
         
         # Initialize Azure client for direct ADLS access

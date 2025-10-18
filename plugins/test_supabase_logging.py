@@ -25,13 +25,13 @@ def test_supabase_logging():
         
         # Create test data mimicking a DAG run
         test_data = {
-            "dag_id": "test_dag",
-            "run_id": 12345,
+            "dag_id": "test_dag2",
+            "run_id": 67891,
             "run_date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "status": "success",
-            "duration_seconds": 120,
-            "tasks_failed": 0,
-            "error_message": None,
+            "status": "failed",
+            "duration_seconds": 50,
+            "tasks_failed": 2,
+            "error_message": "Scrapers didnt work",
             "run_timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         

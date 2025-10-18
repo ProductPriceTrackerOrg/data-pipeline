@@ -37,7 +37,7 @@ cron-descriptor==1.4.5
 croniter==6.0.0
 cryptography==45.0.6
 daff==1.4.2
--e git+https://github.com/ProductPriceTrackerOrg/data-pipeline.git@44b29102c9217e1d7a9b32daa21bdd38fa81addf#egg=data_pipeline
+-e git+https://github.com/ProductPriceTrackerOrg/data-pipeline.git@8e04147f35d07a8a205a857f388015ab6ea1e584#egg=data_pipeline
 DateTime==5.5
 db-dtypes==1.4.3
 dbt-adapters==1.17.2

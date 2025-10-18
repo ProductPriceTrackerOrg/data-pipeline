@@ -28,10 +28,10 @@ with DAG(
     )
 
     # Task to run the AppleMe scraper
-    scrape_appleme_task = BashOperator(
-        task_id="scrape_appleme",
-        bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
-    )
+    # scrape_appleme_task = BashOperator(
+    #     task_id="scrape_appleme",
+    #     bash_command="cd /opt/airflow/scrapers/appleme && python -u turbo_scraper.py",
+    # )
 
     # Task to run the SimplyTek scraper
     scrape_simplytek_task = BashOperator(
@@ -39,98 +39,101 @@ with DAG(
         bash_command="cd /opt/airflow/scrapers/simplytek && python -u main.py",
     )
 
-
     # Task to run the Onei.lk scraper
-    scrape_onei_task = BashOperator(
-        task_id="scrape_onei",
-        bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
-    )
+    # scrape_onei_task = BashOperator(
+    #     task_id="scrape_onei",
+    #     bash_command="cd /opt/airflow/scrapers/Onei.lk && python -u main.py",
+    # )
 
-    # Task to run the lifeMobile  scraper
-    scrape_lifeMobile_task = BashOperator(
-        task_id="scrape_lifemobile",
-        bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
-    )
+    # Task to run the lifeMobile scraper
+    # scrape_lifemobile_task = BashOperator(
+    #     task_id="scrape_lifemobile",
+    #     bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
+    # )
 
-    # Task to run the CyberDeals scraper
-    scrape_cyberdeals_task = BashOperator(
-        task_id="scrape_cyberdeals",
-        bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
-
-    )
+    # # Task to run the CyberDeals scraper
+    # scrape_cyberdeals_task = BashOperator(
+    #     task_id="scrape_cyberdeals",
+    #     bash_command="cd /opt/airflow/scrapers/cyberdeals && python -u main.py",
+    # )
     
     # Task to run the laptops.lk scraper
-    scrape_laptoplk_task = BashOperator(
-        task_id="scrape_laptoplk",
-        bash_command="cd /opt/airflow/scrapers/laptoplk && python -u main.py",
-
-    )
+    # scrape_laptoplk_task = BashOperator(
+    #     task_id="scrape_laptoplk",
+    #     bash_command="cd /opt/airflow/scrapers/laptoplk && python -u main.py",
+    # )
     
     # Delay task (20 seconds)
-    delay_task = BashOperator(
-        task_id="delay",
-        bash_command="sleep 20",
-    )
+    # delay_task = BashOperator(
+    #     task_id="delay",
+    #     bash_command="sleep 10",
+    # )
+
+    # # environment setup task docker compose exec airflow-worker bash -c "python /opt/airflow/init_gcp_creds.py" 
+    # setup_env_task = BashOperator(
+    #     task_id="setup_env",
+    #     bash_command="python /opt/airflow/init_gcp_creds.py",
+    # )
+
+    # # Task to load data into staging tables
+    # load_staging_task = BashOperator(
+    #     task_id="load_staging",
+    #     bash_command="cd /opt/airflow/transformations/loading/bigquery && python -u loader.py",
+    # )
     
-    # Task to load data into staging tables
-    load_staging_task = BashOperator(
-        task_id="load_staging",
-        bash_command="cd /opt/airflow/transformations/loading && python -u loader.py",
-    )
+    # # Transformation tasks
+    # transform_dim_date_task = BashOperator(
+    #     task_id="transform_dim_date",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_date.py",
+    # )
+
+    # transform_dim_shop_task = BashOperator(
+    #     task_id="transform_dim_shop",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop.py",
+    # )
+
+    # transform_dim_shop_product_task = BashOperator(
+    #     task_id="transform_dim_shop_product",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop_product.py",
+    # )
     
-    # Transformation tasks
-    transform_dim_date_task = BashOperator(
-        task_id="transform_dim_date",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_date.py",
-    )
+    # transform_dim_variant_task = BashOperator(
+    #     task_id="transform_dim_variant",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_variant.py",
+    # )
 
-    transform_dim_shop_task = BashOperator(
-        task_id="transform_dim_shop",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop.py",
-    )
+    # transform_dim_product_image_task = BashOperator(
+    #     task_id="transform_dim_product_image",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_product_image.py",
+    # )
 
-    transform_dim_shop_product_task = BashOperator(
-        task_id="transform_dim_shop_product",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_shop_product.py",
-    )
-    
-    transform_dim_variant_task = BashOperator(
-        task_id="transform_dim_variant",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_variant.py",
-    )
-
-    transform_dim_product_image_task = BashOperator(
-        task_id="transform_dim_product_image",
-        bash_command="cd /opt/airflow/transformations/warehouse/dimensions && python -u dim_product_image.py",
-    )
-
-    transform_fact_product_price_task = BashOperator(
-        task_id="transform_fact_product_price",
-        bash_command="cd /opt/airflow/transformations/warehouse/facts && python -u fact_product_price.py",
-    )
+    # transform_fact_product_price_task = BashOperator(
+    #     task_id="transform_fact_product_price",
+    #     bash_command="cd /opt/airflow/transformations/warehouse/facts && python -u fact_product_price.py",
+    # )
             
-    # Dummy end task for better visualization
-    end_task = BashOperator(
-        task_id="end", 
-        bash_command="echo 'Data ingestion pipeline completed successfully.'"
-    )
+    # # Dummy end task for better visualization
+    # end_task = BashOperator(
+    #     task_id="end", 
+    #     bash_command="echo 'Data ingestion pipeline completed successfully.'"
+    # )
 
     # Set the dependencies
 
     start_task >> [
-                    scrape_appleme_task, 
+                    # scrape_appleme_task, 
                     scrape_simplytek_task, 
-                    scrape_onei_task, 
-                    scrape_lifeMobile_task, 
-                    scrape_laptoplk_task, 
-                    scrape_cyberdeals_task
-    ] >> delay_task >> load_staging_task >> [
-                                            transform_dim_date_task,
-                                            transform_dim_shop_task,
-                                            transform_dim_shop_product_task,
-                                            transform_dim_variant_task,
-                                            transform_dim_product_image_task,
-                                            transform_fact_product_price_task,
-                                            ] >> end_task
-    # start_task >> scrape_simplytek_task >> end_task
+                    # scrape_onei_task, 
+                    # scrape_lifemobile_task,  
+                    # scrape_laptoplk_task
+                    # scrape_cyberdeals_task 
+                    ]
+    # ] >> delay_task >> setup_env_task >> load_staging_task >> [
+    #                                         transform_dim_date_task,
+    #                                         transform_dim_shop_task,
+    #                                         transform_dim_shop_product_task,
+    #                                         transform_dim_variant_task,
+    #                                         transform_dim_product_image_task,
+    #                                         transform_fact_product_price_task,
+    #                                         ] >> end_task
 

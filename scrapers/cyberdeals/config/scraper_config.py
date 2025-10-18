@@ -8,10 +8,10 @@ BASE_URL = "https://cyberdeals.lk"
 SITEMAP_URL = f"{BASE_URL}/sitemap_index.xml"
 
 # Performance settings
-MAX_CONNECTIONS = 100  # Maximum concurrent connections
+MAX_CONNECTIONS = 25  # Maximum concurrent connections
 REQUEST_TIMEOUT = 30  # seconds
 MAX_RETRIES = 3
-BATCH_SIZE = 200  # Number of products to process in each batch
+BATCH_SIZE = 100  # Number of products to process in each batch
 
 # Request headers to mimic a real browser
 DEFAULT_HEADERS = {

@@ -10,10 +10,10 @@ BASE_URL = "https://www.laptop.lk"
 SITEMAP_INDEX_URL = f"{BASE_URL}/sitemap_index.xml"
 
 # Performance settings
-MAX_CONCURRENT_REQUESTS = 25
-REQUEST_DELAY = 0.1  # seconds between requests
-TIMEOUT = 30  # request timeout in seconds
-MAX_RETRIES = 3
+MAX_CONCURRENT_REQUESTS = 15  # Reduced from 25 to avoid TLS handshake failures
+REQUEST_DELAY = 0.5  # Increased from 0.1 to reduce server load
+TIMEOUT = 45  # Increased from 30 to allow more time for TLS handshake
+MAX_RETRIES = 5  # Increased from 3 to give more chances to succeed
 
 # Request headers to mimic a real browser
 DEFAULT_HEADERS = {

@@ -1,16 +1,11 @@
-
-# ./Dockerfile
-
 FROM apache/airflow:2.9.2
 
-# Switch to the root user to install system packages or pip packages globally
 USER root
 
-# Copy your requirements file
-COPY requirements.txt .
+# Copy project-specific dependencies and adjust ownership so the airflow user can install them.
+COPY requirements.txt /tmp/requirements.txt
+RUN chown airflow:0 /tmp/requirements.txt
 
-# Install python dependencies with a longer timeout and no cache
-RUN pip install --no-cache-dir --timeout=100 -r requirements.txt
-
-# Switch back to the non-root airflow user
 USER airflow
+
+RUN pip install --no-cache-dir --requirement /tmp/requirements.txt

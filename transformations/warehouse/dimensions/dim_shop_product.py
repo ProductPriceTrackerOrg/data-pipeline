@@ -6,7 +6,11 @@ HTML cleaning, Pydantic validation, and fallback strategies.
 
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
+# Add the parent directory to path so we can import from utils
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
+sys.path.append(parent_dir)
 
 import json
 import re
@@ -17,7 +21,7 @@ import logging
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ValidationError, validator, Field
 from google.cloud import bigquery
-from transformations.warehouse.utils.transformation_utils import TransformationBase
+from utils.transformation_utils import TransformationBase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -177,6 +181,13 @@ class DimShopProductTransformer(TransformationBase):
         self.table_name = "DimShopProduct"
         self.shop_lookup = {}  # Cache for shop_id lookups
         
+    def _get_temp_table_ref(self) -> bigquery.TableReference:
+        """Creates a reference for a temporary destination table."""
+        # A temporary table will be created in the staging dataset
+        # and will be automatically deleted after about 24 hours.
+        temp_table_id = f"temp_extract_{int(datetime.now().timestamp())}"
+        return self.client.dataset(self.staging_dataset).table(temp_table_id)
+        
     def build_shop_lookup(self) -> Dict[str, int]:
         """
         Build lookup table for shop_name -> shop_id mapping.
@@ -264,7 +275,8 @@ class DimShopProductTransformer(TransformationBase):
 
     def extract_products_from_staging(self, target_date: date = None) -> List[Dict]:
         """
-        Extract product data from all staging tables (dynamically discovered).
+        Extract product data from all staging tables using a temporary destination table
+        to handle large result sets efficiently.
         
         Args:
             target_date: Date to extract data for (defaults to current UTC date)
@@ -272,6 +284,9 @@ class DimShopProductTransformer(TransformationBase):
         Returns:
             List of raw product JSON data
         """
+        start_time = datetime.now()
+        logger.info(f"Starting product extraction at {start_time}")
+        
         if target_date is None:
             target_date = datetime.now(timezone.utc).date()
             
@@ -279,9 +294,12 @@ class DimShopProductTransformer(TransformationBase):
         
         # Dynamically discover all staging tables
         staging_tables = self.get_all_staging_tables()
+        logger.info(f"Discovered {len(staging_tables)} staging tables to process")
         
         for table_name in staging_tables:
             try:
+                logger.info(f"Processing table: {table_name} for date: {target_date}")
+                
                 # First check if the table has data for the target date
                 count_query = f"""
                 SELECT COUNT(*) as row_count
@@ -296,26 +314,54 @@ class DimShopProductTransformer(TransformationBase):
                     logger.info(f"No data found in {table_name} for {target_date}")
                     continue
                 
-                # Extract data from this table
+                logger.info(f"Found {row_count} rows in {table_name}, preparing extraction...")
+                
+                # This query selects all the necessary data for the target date
                 query = f"""
-                SELECT 
+                SELECT
                     raw_json_data,
                     source_website,
                     scrape_date
                 FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
                 WHERE scrape_date = '{target_date}'
                 """
+
+                # **KEY CHANGE**: Configure the query to save results to a temporary table
+                temp_table_ref = self._get_temp_table_ref()
+                job_config = bigquery.QueryJobConfig(
+                    destination=temp_table_ref,
+                    write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+                )
+
+                # Start the query job and wait for it to complete
+                query_job = self.client.query(query, job_config=job_config)
+                logger.info(f"Running query for {table_name}, results will be stored in {temp_table_ref.table_id}")
+                query_job.result()  # Waits for the job to finish.
+
+                # Check how many rows were written to the destination table
+                destination_table = self.client.get_table(temp_table_ref)
+                if destination_table.num_rows == 0:
+                    logger.info(f"No data found in {table_name} for {target_date} (temp table empty)")
+                    continue
                 
-                results = self.client.query(query).result()
+                logger.info(f"Query completed. Found {destination_table.num_rows} rows in temp table. Reading results...")
+
+                # **KEY CHANGE**: Read from the destination table using list_rows (uses Storage API)
+                # This is highly efficient and has no response size limit.
+                rows_iterator = self.client.list_rows(destination_table)
                 products_from_table = 0
                 
-                for row in results:
+                for row in rows_iterator:
                     try:
                         # Parse JSON data
                         if isinstance(row.raw_json_data, str):
                             json_data = json.loads(row.raw_json_data)
                         else:
                             json_data = row.raw_json_data
+                        
+                        # Sometimes json_data itself might be a string that needs parsing again (double-encoded)
+                        if isinstance(json_data, str):
+                            json_data = json.loads(json_data)
                         
                         # Handle JSON array of products (each row contains multiple products)
                         if isinstance(json_data, list):
@@ -342,16 +388,23 @@ class DimShopProductTransformer(TransformationBase):
                             products_from_table += 1
                         
                     except Exception as e:
-                        logger.warning(f"Failed to parse JSON from {table_name}: {e}")
+                        logger.warning(f"Failed to parse JSON from row in {table_name}: {e}")
                         continue
-                        
-                logger.info(f"Extracted {products_from_table} products from {table_name}")
+                
+                logger.info(f"Successfully extracted {products_from_table} products from {table_name}")
                 
             except Exception as e:
-                logger.warning(f"Could not extract products from {table_name}: {e}")
+                logger.error(f"Could not extract products from {table_name}: {e}", exc_info=True)
                 continue
                 
+        # Summary logging
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        logger.info(f"===== Product Extraction Summary =====")
         logger.info(f"Total products extracted: {len(all_products)}")
+        logger.info(f"Total extraction time: {duration:.2f} seconds")
+        logger.info(f"=====================================")
+        
         return all_products
     
     def transform_single_product(

@@ -103,8 +103,8 @@ class LifeMobileConfig:
     
     # Contact information
     SHOP_CONTACT = {
-        "phone": "011 2322511",
-        "whatsapp": "077 7060616 / 077 55 77 115",
+        "phone": "+9411 2322511",
+        "whatsapp": "+9477 7060616",
         "website": "lifemobile.lk"
     }
     

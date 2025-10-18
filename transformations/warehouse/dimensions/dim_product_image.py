@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, date, timezone
 from typing import List, Dict, Optional, Tuple
 from google.cloud import bigquery
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator, HttpUrl
 import xxhash  # Add xxhash import
 
 # Configure logging
@@ -22,9 +22,20 @@ class ProductImageModel(BaseModel):
     """Validated model for DimProductImage warehouse table."""
     image_id: int
     shop_product_id: int  # xxhash 32-bit integer
-    image_url: str
+    image_url: str  # Using str instead of HttpUrl to allow custom validation
     sort_order: int
     scraped_date: date
+    
+    @field_validator('image_url')
+    @classmethod
+    def validate_image_url(cls, v):
+        """
+        Validate that image URL meets our requirements:
+        - Must start with https://
+        """
+        if not v.startswith("https://"):
+            raise ValueError("Image URL must start with https://")
+        return v
     
     class Config:
         extra = "forbid"
@@ -33,11 +44,77 @@ class DimProductImageTransformer:
     """Transformer for DimProductImage table with daily processing logic"""
     
     def __init__(self):
-        self.client = bigquery.Client(project="price-pulse-470211")
+        # Set up credentials from the service account file
+        import os
+        from pathlib import Path
+        
+        # Look for the credentials file in the project root
+        project_root_path = Path(__file__).parent.parent.parent.parent
+        credentials_path = project_root_path / "gcp-credentials.json"
+        if credentials_path.exists():
+            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(credentials_path)
+            logger.info(f"Using service account credentials from: {credentials_path}")
+        else:
+            logger.warning("No credentials file found at project root. Authentication may fail.")
+            
         self.project_id = "price-pulse-470211"
         self.staging_dataset = "staging"
         self.warehouse_dataset = "warehouse"
-        self.table_name = "DimProductImage"
+        self.table_name = "DimProductImage"  # Set the table name explicitly
+        self.client = bigquery.Client(project=self.project_id)
+        
+    def _get_temp_table_ref(self) -> bigquery.TableReference:
+        """Creates a reference for a temporary destination table."""
+        # A temporary table will be created in the staging dataset
+        # and will be automatically deleted after about 24 hours.
+        temp_table_id = f"temp_extract_image_{int(datetime.now().timestamp())}"
+        # Ensure client is initialized
+        if not hasattr(self, 'client'):
+            self.client = bigquery.Client(project=self.project_id)
+        return self.client.dataset(self.staging_dataset).table(temp_table_id)
+        
+    def is_valid_image_url(self, url: str) -> bool:
+        """
+        Validates if a URL points to a common image format and meets security requirements.
+        
+        Args:
+            url: The URL to validate
+            
+        Returns:
+            bool: True if the URL appears to be a valid image URL
+        """
+        # Basic validation
+        if not url or not isinstance(url, str):
+            return False
+            
+        # Security check: must be HTTPS
+        url_lower = url.lower()
+        if not url_lower.startswith("https://"):
+            logger.warning(f"Rejected invalid image URL (not https): {url[:100]}...")
+            return False
+            
+        # Check if URL ends with common image extensions
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg']
+        
+        # First check: direct extension match
+        if any(url_lower.endswith(ext) for ext in image_extensions):
+            return True
+            
+        # Second check: URL with parameters (e.g., image.jpg?width=300)
+        if any(f"{ext}?" in url_lower for ext in image_extensions):
+            return True
+            
+        # Third check: URL paths containing image indicator
+        image_indicators = ['/images/', '/img/', '/product-images/', '/photos/', '/thumbnails/']
+        if any(indicator in url_lower for indicator in image_indicators):
+            return True
+            
+        # Fourth check: image format in query parameters
+        format_params = ['format=jpg', 'format=jpeg', 'format=png', 'format=webp', 'type=image']
+        if any(param in url_lower for param in format_params):
+            return True
+            
+        return False
         
     def generate_shop_product_id(self, source_website: str, product_id_native: str) -> int:
         """Generate deterministic shop_product_id using xxhash 32-bit integer"""
@@ -94,34 +171,158 @@ class DimProductImageTransformer:
             logger.warning(f"Could not get next image_id (table might be empty): {e}. Starting from 1.")
             return 1
     
-    def extract_images_from_staging(self, table_name: str, target_date: str) -> List[Dict]:
-        """Extract product images from staging table for a specific date"""
+    # We're keeping the more comprehensive is_valid_image_url method above and removing this duplicate
         
-        query = f"""
-        SELECT 
-            raw_json_data,
-            source_website,
-            scrape_date
+        return True
+    
+    def validate_and_sort_product_images(self, product_images: List[Dict]) -> List[Dict]:
+        """
+        Filter out invalid images and reassign sort orders
+        Ensures each product has its valid images sorted as 1,2,3...
+        
+        Returns only valid images with corrected sort orders
+        """
+        # Group images by product ID
+        products = {}
+        for image in product_images:
+            shop_product_id = image['shop_product_id']
+            if shop_product_id not in products:
+                products[shop_product_id] = []
+            products[shop_product_id].append(image)
+        
+        valid_images = []
+        products_with_no_valid_images = 0
+        products_with_reordered_images = 0
+        
+        for shop_product_id, images in products.items():
+            # Filter valid images
+            valid_product_images = [
+                img for img in images 
+                if self.is_valid_image_url(img['image_url'])
+            ]
+            
+            if not valid_product_images:
+                products_with_no_valid_images += 1
+                logger.warning(f"Product {shop_product_id} has no valid images")
+                continue
+                
+            # If the original sort order was changed, log it
+            if len(valid_product_images) != len(images):
+                products_with_reordered_images += 1
+                
+            # Reassign sort orders (1,2,3...) to valid images only
+            for new_sort_order, image in enumerate(valid_product_images, 1):
+                image['sort_order'] = new_sort_order
+                valid_images.append(image)
+        
+        logger.info(f"Image validation results:")
+        logger.info(f"  - Total products processed: {len(products)}")
+        logger.info(f"  - Products with no valid images: {products_with_no_valid_images}")
+        logger.info(f"  - Products with reordered images: {products_with_reordered_images}")
+        logger.info(f"  - Valid images after filtering: {len(valid_images)}")
+        
+        return valid_images
+
+    def extract_images_from_staging(self, table_name: str, target_date: str) -> List[Dict]:
+        """
+        Extract product images from staging table for a specific date using a temporary
+        destination table to handle large result sets efficiently.
+        """
+        start_time = datetime.now()
+        logger.info(f"Starting image extraction from {table_name} at {start_time}")
+        
+        # Ensure client is initialized
+        if not hasattr(self, 'client'):
+            self.client = bigquery.Client(project=self.project_id)
+            
+        # First check if the table has data for the target date
+        count_query = f"""
+        SELECT COUNT(*) as row_count
         FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
         WHERE scrape_date = '{target_date}'
         """
         
         try:
-            results = self.client.query(query).result()
-            images = []
+            count_result = list(self.client.query(count_query).result())
+            row_count = count_result[0].row_count if count_result else 0
             
-            for row in results:
+            if row_count == 0:
+                logger.info(f"No data found in {table_name} for {target_date}")
+                return []
+            
+            logger.info(f"Found {row_count} rows in {table_name}, preparing extraction...")
+            
+            # Query to select all data for the target date
+            query = f"""
+            SELECT 
+                raw_json_data,
+                source_website,
+                scrape_date
+            FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
+            WHERE scrape_date = '{target_date}'
+            """
+            
+            # Configure the query to save results to a temporary table
+            temp_table_ref = self._get_temp_table_ref()
+            job_config = bigquery.QueryJobConfig(
+                destination=temp_table_ref,
+                write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+            )
+            
+            # Start the query job and wait for it to complete
+            query_job = self.client.query(query, job_config=job_config)
+            logger.info(f"Running query for {table_name}, results will be stored in {temp_table_ref.table_id}")
+            query_job.result()  # Waits for the job to finish.
+            
+            # Check how many rows were written to the destination table
+            destination_table = self.client.get_table(temp_table_ref)
+            if destination_table.num_rows == 0:
+                logger.info(f"No data found in {table_name} for {target_date} (temp table empty)")
+                return []
+            
+            logger.info(f"Query completed. Found {destination_table.num_rows} rows in temp table. Reading results...")
+            
+            # Read from the destination table using list_rows (uses Storage API)
+            rows_iterator = self.client.list_rows(destination_table)
+            raw_images = []
+            total_image_urls = 0
+            valid_image_urls = 0
+            invalid_image_urls = 0
+            
+            for row in rows_iterator:
                 try:
                     if isinstance(row.raw_json_data, str):
                         json_data = json.loads(row.raw_json_data)
                     else:
                         json_data = row.raw_json_data
+                        
+                    # Sometimes json_data itself might be a string that needs parsing again (double-encoded)
+                    if isinstance(json_data, str):
+                        json_data = json.loads(json_data)
                     
                     products_to_process = json_data if isinstance(json_data, list) else [json_data]
                     
                     for product_data in products_to_process:
+                        if not isinstance(product_data, dict):
+                            logger.warning(f"Expected product data to be a dictionary, got {type(product_data)}: {str(product_data)[:100]}...")
+                            continue
+                            
                         product_id_native = product_data.get('product_id_native')
                         image_urls = product_data.get('image_urls', [])
+                        
+                        # Validate each image URL
+                        if image_urls and isinstance(image_urls, list):
+                            total_image_urls += len(image_urls)
+                            valid_urls = []
+                            for url in image_urls:
+                                if self.is_valid_image_url(url):
+                                    valid_urls.append(url)
+                                    valid_image_urls += 1
+                                else:
+                                    invalid_image_urls += 1
+                                    logger.debug(f"Skipping invalid image URL: {url}")
+                            # Replace with only valid URLs
+                            image_urls = valid_urls
                         
                         if not product_id_native or not image_urls:
                             continue
@@ -133,7 +334,7 @@ class DimProductImageTransformer:
                         
                         for sort_order, image_url in enumerate(image_urls, 1):
                             if image_url:
-                                images.append({
+                                raw_images.append({
                                     'shop_product_id': shop_product_id,
                                     'image_url': image_url,
                                     'sort_order': sort_order
@@ -143,8 +344,22 @@ class DimProductImageTransformer:
                     logger.warning(f"Error parsing product data: {e}")
                     continue
             
-            logger.info(f"Extracted {len(images)} images from {table_name}")
-            return images
+            # Apply validation and sort ordering
+            valid_images = self.validate_and_sort_product_images(raw_images)
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            # Comprehensive image extraction summary
+            logger.info(f"===== Image Extraction Summary for {table_name} =====")
+            logger.info(f"Total raw images extracted: {len(raw_images)}")
+            logger.info(f"Valid images after URL validation: {valid_image_urls} of {total_image_urls} URLs ({valid_image_urls/total_image_urls*100:.1f}% if applicable)")
+            logger.info(f"Invalid image URLs filtered: {invalid_image_urls}")
+            logger.info(f"Images after sort and dedup validation: {len(valid_images)}")
+            logger.info(f"Processing time: {duration:.2f} seconds")
+            logger.info(f"===========================================")
+            
+            return valid_images
             
         except Exception as e:
             logger.error(f"Error extracting images from {table_name}: {e}")
@@ -158,10 +373,20 @@ class DimProductImageTransformer:
         
         for raw_image in raw_images:
             try:
+                # Ensure the image URL is HTTPS (double-check, even though we should have filtered these already)
+                image_url = raw_image['image_url']
+                if not self.is_valid_image_url(image_url):
+                    logger.warning(f"Skipping image with invalid URL format: {image_url[:100]}...")
+                    failed_images.append({
+                        'raw_data': raw_image, 
+                        'error': 'Invalid image URL: must start with https://'
+                    })
+                    continue
+                
                 image_data = {
                     'image_id': current_image_id,
                     'shop_product_id': raw_image['shop_product_id'],
-                    'image_url': raw_image['image_url'],
+                    'image_url': image_url,
                     'sort_order': raw_image['sort_order'],
                     'scraped_date': target_date
                 }
@@ -179,6 +404,11 @@ class DimProductImageTransformer:
             except Exception as e:
                 logger.error(f"Error processing image: {e}")
                 failed_images.append({'raw_data': raw_image, 'error': str(e)})
+        
+        # Log validation results
+        logger.info(f"Image batch processing results:")
+        logger.info(f"  - Images successfully processed: {len(successful_images)}")
+        logger.info(f"  - Images failed validation: {len(failed_images)}")
         
         return successful_images, failed_images
     
@@ -259,29 +489,56 @@ class DimProductImageTransformer:
             all_successful_images = []
             all_failed_images = []
             
+            # Track validation metrics
+            total_raw_images_count = 0
+            total_invalid_images_count = 0
+            
             for table_name in staging_tables:
                 print(f"\n📋 Processing {table_name}...")
                 
-                raw_images = self.extract_images_from_staging(table_name, target_date)
+                # Track the number of raw images before validation
+                raw_count_query = f"""
+                SELECT COUNT(*) as raw_count
+                FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
+                WHERE scrape_date = '{target_date}'
+                AND JSON_EXTRACT_ARRAY(raw_json_data, '$.image_urls') IS NOT NULL
+                """
                 
-                if raw_images:
+                try:
+                    raw_result = list(self.client.query(raw_count_query).result())
+                    if raw_result:
+                        estimated_raw_count = raw_result[0].raw_count
+                        total_raw_images_count += estimated_raw_count
+                except Exception:
+                    # If this fails, we'll still continue with the process
+                    pass
+                
+                # Extract images with validation
+                valid_images = self.extract_images_from_staging(table_name, target_date)
+                
+                if valid_images:
                     batch_start_id = starting_image_id + len(all_successful_images)
                     
                     successful, failed = self.process_images_batch(
-                        raw_images, target_date_obj, batch_start_id
+                        valid_images, target_date_obj, batch_start_id
                     )
                     
                     all_successful_images.extend(successful)
                     all_failed_images.extend(failed)
                     
-                    print(f"  ✅ Transformed {len(successful)} images")
+                    print(f"  ✅ Transformed {len(successful)} valid images")
                 else:
-                    print(f"  ⚠️ No images found in this table for the target date")
+                    print(f"  ⚠️ No valid images found in this table for the target date")
+            
+            # Estimate invalid images (this is approximate since we don't track exact counts)
+            total_invalid_images_count = total_raw_images_count - len(all_successful_images)
+            if total_invalid_images_count < 0:
+                total_invalid_images_count = 0  # Guard against negative values
             
             new_images = []
             duplicate_count = 0
             if all_successful_images:
-                print(f"\n🔄 Deduplicating {len(all_successful_images)} total images against existing data...")
+                print(f"\n🔄 Deduplicating {len(all_successful_images)} validated images against existing data...")
                 new_images, duplicate_count = self.deduplicate_images(all_successful_images, existing_keys)
                 
                 if new_images:
@@ -294,14 +551,37 @@ class DimProductImageTransformer:
             print("\n✅ DimProductImage transformation completed successfully!")
             print("📊 SUMMARY:")
             print(f"  - Staging tables processed: {len(staging_tables)}")
-            print(f"  - Total images transformed from today's data: {len(all_successful_images)}")
+            print(f"  - Estimated raw images in staging data: {total_raw_images_count}")
+            print(f"  - Images rejected by validation (not HTTPS): ~{total_invalid_images_count}")
+            print(f"  - Valid images after HTTPS validation: {len(all_successful_images)}")
             print(f"  - Existing images skipped (scraped_date untouched): {duplicate_count}")
             print(f"  - New unique images loaded (scraped_date set to today): {len(new_images)}")
-            print(f"  - Failed to process: {len(all_failed_images)}")
+            print(f"  - Failed validation/processing: {len(all_failed_images)}")
+            
+            # Log invalid images for debugging if there are any
+            if all_failed_images:
+                self.log_invalid_images(all_failed_images, f"invalid_images_{target_date}.json")
+                print(f"  - Invalid images logged to invalid_images_{target_date}.json for review")
             
         except Exception as e:
             logger.error(f"DimProductImage transformation failed: {e}")
             raise
+
+    def log_invalid_images(self, invalid_images: List[Dict], output_path: str = "invalid_images.json"):
+        """
+        Log invalid images to a JSON file for debugging purposes
+        
+        Args:
+            invalid_images: List of invalid images with error information
+            output_path: File path to save the invalid images
+        """
+        try:
+            if invalid_images:
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(invalid_images, f, indent=2, default=str)
+                logger.info(f"Logged {len(invalid_images)} invalid images to {output_path}")
+        except Exception as e:
+            logger.error(f"Error logging invalid images: {e}")
 
 def main():
     """Main execution function for DimProductImage transformation."""

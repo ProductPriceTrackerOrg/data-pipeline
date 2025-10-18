@@ -20,31 +20,10 @@ class FactProductPriceLoader:
     Handles the extraction, transformation, and loading of daily price facts.
     """
     def __init__(self):
-        # Set up credentials from the service account file
-        import os
-        from pathlib import Path
-        
-        # Look for the credentials file in the project root
-        project_root_path = Path(__file__).parent.parent.parent.parent
-        credentials_path = project_root_path / "gcp-credentials.json"
-        if credentials_path.exists():
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(credentials_path)
-            logger.info(f"Using service account credentials from: {credentials_path}")
-        else:
-            logger.warning("No credentials file found at project root. Authentication may fail.")
-            
+        self.client = bigquery.Client(project="price-pulse-470211")
         self.project_id = "price-pulse-470211"
-        self.client = bigquery.Client(project=self.project_id)
-        self.staging_dataset = "staging"
         self.warehouse_dataset = "warehouse"
         self.table_name = "FactProductPrice"
-        
-    def _get_temp_table_ref(self) -> bigquery.TableReference:
-        """Creates a reference for a temporary destination table."""
-        # A temporary table will be created in the staging dataset
-        # and will be automatically deleted after about 24 hours.
-        temp_table_id = f"temp_extract_price_{int(datetime.now().timestamp())}"
-        return self.client.dataset(self.staging_dataset).table(temp_table_id)
 
     def get_all_staging_tables(self) -> List[str]:
         """Dynamically discovers all staging tables."""
@@ -124,11 +103,8 @@ class FactProductPriceLoader:
     def extract_and_transform(self, target_date: str) -> List[Dict]:
         """
         Extracts price data from staging tables and transforms it for the fact table.
-        Uses a temporary destination table approach to handle large result sets.
+        Now using the approach that worked for dim_shop_product.py
         """
-        start_time = datetime.now()
-        logger.info(f"Starting price fact extraction at {start_time}")
-        
         staging_tables = self.get_all_staging_tables()
         if not staging_tables:
             logger.warning("No staging tables found.")
@@ -140,57 +116,20 @@ class FactProductPriceLoader:
 
         for table_name in staging_tables:
             try:
-                # First check if the table has data for the target date
-                count_query = f"""
-                SELECT COUNT(*) as row_count
-                FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
-                WHERE scrape_date = '{target_date}'
-                """
-                
-                count_result = list(self.client.query(count_query).result())
-                row_count = count_result[0].row_count if count_result else 0
-                
-                if row_count == 0:
-                    logger.info(f"No data found in {table_name} for {target_date}")
-                    continue
-                
-                logger.info(f"Found {row_count} rows in {table_name}, preparing extraction...")
-                
-                # This query selects all the necessary data for the target date
+                # Direct extraction of raw JSON data
                 query = f"""
                 SELECT 
                     raw_json_data,
                     source_website,
                     scrape_date
-                FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
+                FROM `{self.project_id}.staging.{table_name}`
                 WHERE scrape_date = '{target_date}'
                 """
                 
-                # Configure the query to save results to a temporary table
-                temp_table_ref = self._get_temp_table_ref()
-                job_config = bigquery.QueryJobConfig(
-                    destination=temp_table_ref,
-                    write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-                )
-                
-                # Start the query job and wait for it to complete
-                query_job = self.client.query(query, job_config=job_config)
-                logger.info(f"Running query for {table_name}, results will be stored in {temp_table_ref.table_id}")
-                query_job.result()  # Waits for the job to finish.
-                
-                # Check how many rows were written to the destination table
-                destination_table = self.client.get_table(temp_table_ref)
-                if destination_table.num_rows == 0:
-                    logger.info(f"No data found in {table_name} for {target_date} (temp table empty)")
-                    continue
-                
-                logger.info(f"Query completed. Found {destination_table.num_rows} rows in temp table. Reading results...")
-                
-                # Read from the destination table using list_rows (uses Storage API)
-                rows_iterator = self.client.list_rows(destination_table)
+                results = self.client.query(query).result()
                 table_facts_count = 0
                 
-                for row in rows_iterator:
+                for row in results:
                     try:
                         # Parse JSON data
                         if isinstance(row.raw_json_data, str):
@@ -207,7 +146,7 @@ class FactProductPriceLoader:
                         
                         for product_data in products_to_process:
                             if not isinstance(product_data, dict):
-                                logger.warning(f"Expected product data to be a dictionary, got {type(product_data)}: {str(product_data)[:100]}...")
+                                logger.warning(f"Expected product data to be a dictionary, got {type(product_data)}: {product_data[:100]}...")
                                 continue
                                 
                             # Basic validation
@@ -260,19 +199,9 @@ class FactProductPriceLoader:
                 logger.info(f"Extracted {table_facts_count} facts from {table_name}")
                 
             except Exception as e:
-                logger.error(f"Error querying {table_name}: {e}", exc_info=True)
+                logger.error(f"Error querying {table_name}: {e}")
         
-        end_time = datetime.now()
-        duration = (end_time - start_time).total_seconds()
-        
-        # Comprehensive extraction summary
-        logger.info(f"===== Price Facts Extraction Summary =====")
-        logger.info(f"Total staging tables processed: {len(staging_tables)}")
-        logger.info(f"Total price facts extracted: {len(all_facts)}")
-        logger.info(f"Total extraction time: {duration:.2f} seconds")
-        logger.info(f"Price facts per second: {len(all_facts)/duration:.1f}" if duration > 0 else "N/A")
-        logger.info(f"==========================================")
-        
+        logger.info(f"Successfully transformed {len(all_facts)} fact rows.")
         return all_facts
 
     def load_to_bigquery(self, rows: List[Dict]):

@@ -25,30 +25,8 @@ logger = logging.getLogger(__name__)
 
 class DimVariantTransformation:
     def __init__(self):
-        # Set up credentials from the service account file
-        import os
-        from pathlib import Path
-        
-        # Look for the credentials file in the project root
-        project_root_path = Path(__file__).parent.parent.parent.parent
-        credentials_path = project_root_path / "gcp-credentials.json"
-        if credentials_path.exists():
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = str(credentials_path)
-            logger.info(f"Using service account credentials from: {credentials_path}")
-        else:
-            logger.warning("No credentials file found at project root. Authentication may fail.")
-            
+        self.client = bigquery.Client()
         self.project_id = "price-pulse-470211"
-        self.client = bigquery.Client(project=self.project_id)
-        self.staging_dataset = "staging"
-        self.warehouse_dataset = "warehouse"
-        
-    def _get_temp_table_ref(self) -> bigquery.TableReference:
-        """Creates a reference for a temporary destination table."""
-        # A temporary table will be created in the staging dataset
-        # and will be automatically deleted after about 24 hours.
-        temp_table_id = f"temp_extract_variant_{int(datetime.now().timestamp())}"
-        return self.client.dataset(self.staging_dataset).table(temp_table_id)
     
     def generate_shop_product_id(self, source_website: str, product_id_native: str) -> int:
         """Generate xxhash-based shop_product_id as 32-bit integer"""
@@ -78,62 +56,23 @@ class DimVariantTransformation:
         return tables
     
     def extract_variants_from_staging(self, table_name: str, target_date: str) -> List[Dict[str, Any]]:
-        """Extract variant data from a staging table using temporary table to handle large result sets"""
-        start_time = datetime.now()
-        logger.info(f"Starting variants extraction from {table_name} at {start_time}")
+        """Extract variant data from a staging table"""
         
-        # First check if the table has data for the target date
-        count_query = f"""
-        SELECT COUNT(*) as row_count
-        FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
+        # Use the same approach as in dim_shop_product.py
+        query = f"""
+        SELECT 
+            raw_json_data,
+            source_website,
+            scrape_date
+        FROM `{self.project_id}.staging.{table_name}`
         WHERE scrape_date = '{target_date}'
         """
         
         try:
-            count_result = list(self.client.query(count_query).result())
-            row_count = count_result[0].row_count if count_result else 0
-            
-            if row_count == 0:
-                logger.info(f"No data found in {table_name} for {target_date}")
-                return []
-            
-            logger.info(f"Found {row_count} rows in {table_name}, preparing extraction...")
-            
-            # This query selects all the necessary data for the target date
-            query = f"""
-            SELECT 
-                raw_json_data,
-                source_website,
-                scrape_date
-            FROM `{self.project_id}.{self.staging_dataset}.{table_name}`
-            WHERE scrape_date = '{target_date}'
-            """
-            
-            # Configure the query to save results to a temporary table
-            temp_table_ref = self._get_temp_table_ref()
-            job_config = bigquery.QueryJobConfig(
-                destination=temp_table_ref,
-                write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-            )
-            
-            # Start the query job and wait for it to complete
-            query_job = self.client.query(query, job_config=job_config)
-            logger.info(f"Running query for {table_name}, results will be stored in {temp_table_ref.table_id}")
-            query_job.result()  # Waits for the job to finish.
-            
-            # Check how many rows were written to the destination table
-            destination_table = self.client.get_table(temp_table_ref)
-            if destination_table.num_rows == 0:
-                logger.info(f"No data found in {table_name} for {target_date} (temp table empty)")
-                return []
-            
-            logger.info(f"Query completed. Found {destination_table.num_rows} rows in temp table. Reading results...")
-            
-            # Read from the destination table using list_rows (uses Storage API)
-            rows_iterator = self.client.list_rows(destination_table)
+            results = list(self.client.query(query).result())
             variants = []
             
-            for row in rows_iterator:
+            for row in results:
                 try:
                     # Parse JSON data
                     if isinstance(row.raw_json_data, str):
@@ -173,16 +112,14 @@ class DimVariantTransformation:
                             variants.append(variant_info)
                         
                 except (json.JSONDecodeError, KeyError, AttributeError) as e:
-                    logger.warning(f"Error parsing product data: {e}")
+                    logging.warning(f"Error parsing product data: {e}")
                     continue
             
-            end_time = datetime.now()
-            duration = (end_time - start_time).total_seconds()
-            logger.info(f"Extracted {len(variants)} variants from {table_name} in {duration:.2f} seconds")
+            logging.info(f"Extracted {len(variants)} variants from {table_name}")
             return variants
             
         except Exception as e:
-            logger.error(f"Error querying {table_name}: {e}", exc_info=True)
+            logging.error(f"Error querying {table_name}: {e}")
             return []
     
     def transform_variant(self, variant_info: Dict[str, Any]) -> Dict[str, Any]:

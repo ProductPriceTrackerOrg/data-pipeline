@@ -1,8 +1,10 @@
-"""
-Configuration file for LSTM Price Forecasting Production Pipeline
-"""
+"""Configuration for the LSTM price forecasting pipeline."""
 
+import os
 import torch
+
+# Resolve paths relative to this module so the pipeline works from any CWD
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # BigQuery Configuration
 PROJECT_ID = "price-pulse-470211"
@@ -25,10 +27,10 @@ BATCH_SIZE = 64  # Training batch size
 LEARNING_RATE = 0.001  # Learning rate for fine-tuning
 FINE_TUNE_EPOCHS =20  # Number of epochs for fine-tuning
 
-# File Paths
-LSTM_MODEL_PATH = "models/lstm_forecaster.pth"
-SCALERS_PATH = "models/product_scalers.pkl"
-DATA_CSV_PATH = "bigquery_prices.csv"
+# File Paths (ensure they resolve relative to the priceforecasting package)
+LSTM_MODEL_PATH = os.path.join(BASE_DIR, "models", "lstm_forecaster.pth")
+SCALERS_PATH = os.path.join(BASE_DIR, "models", "product_scalers.pkl")
+DATA_CSV_PATH = os.path.join(BASE_DIR, "bigquery_prices.csv")
 
 # Device Configuration
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -42,8 +44,8 @@ MIN_DATA_POINTS = (
 )  # Minimum data points needed per product
 TRAIN_VALIDATION_SPLIT = 0.9  # 90% for training, 10% for validation
 
-# Logging Configuration
-LOG_FILE = "production_pipeline.log"
+# Logging Configuration (write logs next to this module)
+LOG_FILE = os.path.join(BASE_DIR, "production_pipeline.log")
 LOG_LEVEL = "INFO"
 
 # SQL Query Template

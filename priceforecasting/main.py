@@ -25,7 +25,7 @@ except ImportError as e:
 def run_pipeline():
     """Run the complete production pipeline"""
     print("=" * 80)
-    print("🚀 LSTM PRICE FORECASTING PRODUCTION PIPELINE")
+    print("LSTM PRICE FORECASTING PRODUCTION PIPELINE")
     print("=" * 80)
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Device: {config.DEVICE}")
@@ -38,7 +38,7 @@ def run_pipeline():
     success = pipeline.run_complete_pipeline()
 
     if success:
-        print("\n🎉 Pipeline completed successfully!")
+        print("\nPipeline completed successfully!")
         print("Results:")
         print("- Model fine-tuned on latest BigQuery data")
         print("- 7-day predictions generated for all variants")
@@ -56,7 +56,7 @@ if __name__ == "__main__":
         exit_code = run_pipeline()
         sys.exit(exit_code)
     except KeyboardInterrupt:
-        print("\n⚠️ Pipeline interrupted by user")
+        print("\nPipeline interrupted by user")
         sys.exit(1)
     except Exception as e:
         print(f"\n💥 Unexpected error: {e}")

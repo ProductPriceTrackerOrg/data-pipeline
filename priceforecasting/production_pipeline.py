@@ -395,7 +395,7 @@ class ProductionPipeline:
             execution_time = end_time - start_time
 
             logger.info("\n" + "=" * 80)
-            logger.info("🎉 MODULAR PIPELINE COMPLETED SUCCESSFULLY!")
+            logger.info("MODULAR PIPELINE COMPLETED SUCCESSFULLY!")
             logger.info("=" * 80)
             logger.info(
                 f"SUCCESS: Processed {df_historical['product_id'].nunique()} unique variants"

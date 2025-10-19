@@ -2,15 +2,16 @@ import yaml
 import logging
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 
 # Import our custom modules
-from data.extraction import get_price_history
-from data.preparation import prepare_price_data
+from big_query.extraction import get_price_history
+from big_query.preparation import prepare_price_data
 from models.statistical import ModifiedZScoreDetector, MovingAverageDetector
 from storage.bigquery_writer import write_anomalies_to_bigquery
 
 # --- Configuration ---
-CONFIG_PATH = 'config/detection_parameters.yaml'
+CONFIG_PATH = Path(__file__).resolve().parent / 'config' / 'detection_parameters.yaml'
 
 def setup_logging():
     """Sets up basic logging for the script execution."""
@@ -29,17 +30,33 @@ def main():
 
     # 1. Load configuration
     try:
-        with open(CONFIG_PATH, 'r') as f:
+        with CONFIG_PATH.open('r') as f:
             config = yaml.safe_load(f)
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
+        return
+
+    # Resolve credentials path for explicit service-account authentication
+    credentials_cfg = config.get('bigquery', {}).get('credentials_path')
+    if credentials_cfg:
+        credentials_path = Path(credentials_cfg)
+        if not credentials_path.is_absolute():
+            credentials_path = (CONFIG_PATH.parents[2] / credentials_path).resolve()
+    else:
+        credentials_path = (CONFIG_PATH.parents[2] / 'gcp-credentials.json').resolve()
+
+    if not credentials_path.exists():
+        logging.error(
+            "Service account key not found at %s. Update bigquery.credentials_path in config or create the key via setup_gcp_creds.sh.",
+            credentials_path,
+        )
         return
 
     # 2. Extract and Prepare Data
     project_id = config['bigquery']['project_id']
     dataset_id = config['bigquery']['dataset_id']
     logging.info("Step 1 & 2: Extracting and preparing data from BigQuery...")
-    raw_data = get_price_history(project_id, dataset_id, days=90)
+    raw_data = get_price_history(project_id, dataset_id, days=90, credentials_path=credentials_path)
     prepared_data = prepare_price_data(raw_data)
     
     if prepared_data.empty:

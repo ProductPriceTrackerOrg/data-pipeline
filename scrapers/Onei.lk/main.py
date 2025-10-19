@@ -32,6 +32,9 @@ def print_banner():
 ╔══════════════════════════════════════════════════════════════╗
 ║                      Onei.lk Web Scraper                    ║
 ║                  Fresh Data Pipeline                         ║
+║                                                              ║
+║  📸 Image Filtering: Only WebP, JPG, PNG, JPEG formats      ║
+║  🚫 Filters out: SVG, GIF, data URLs, placeholders          ║
 ╚══════════════════════════════════════════════════════════════╝
     """
     print(banner)
@@ -76,22 +79,22 @@ def upload_to_adls(json_data: str, source_website: str):
 
     # Define the partitioned path
     utc_now = datetime.now(timezone.utc)
-    scrape_date = utc_now.strftime('%Y-%m-%d')
+    scrape_date = utc_now.strftime("%Y-%m-%d")
     file_path = f"source_website={source_website}/scrape_date={scrape_date}/data.json"
     container_name = "raw-data"
 
     try:
         # Connect to Azure and Upload with extended timeouts
         from azure.storage.blob import ContentSettings
-        
+
         # Configure service client with increased timeouts
         blob_service_client = BlobServiceClient.from_connection_string(
             connection_string,
             connection_timeout=60,  # Connection timeout
-            read_timeout=300,       # Read timeout
-            socket_timeout=300      # Socket timeout
+            read_timeout=300,  # Read timeout
+            socket_timeout=300,  # Socket timeout
         )
-        
+
         blob_client = blob_service_client.get_blob_client(
             container=container_name, blob=file_path
         )
@@ -100,10 +103,10 @@ def upload_to_adls(json_data: str, source_website: str):
 
         # Upload with extended timeout and proper content type
         blob_client.upload_blob(
-            json_data, 
+            json_data,
             overwrite=True,
-            content_settings=ContentSettings(content_type='application/json'),
-            timeout=300  # 5 minute timeout for upload operation
+            content_settings=ContentSettings(content_type="application/json"),
+            timeout=300,  # 5 minute timeout for upload operation
         )
 
         print("Upload to Azure Data Lake Storage completed successfully!")
@@ -145,9 +148,7 @@ def load_scraped_products(json_path="one1lk_products.json"):
                 print(f"First item preview: {data[0][:50]}...")
 
         if string_count > 0:
-            print(
-                f"Data contains strings instead of objects, attempting to parse..."
-            )
+            print(f"Data contains strings instead of objects, attempting to parse...")
             # Try to parse string items as JSON
             fixed_data = []
             for item in data:
@@ -184,7 +185,9 @@ def main():
     """Main entry point - scrape fresh products and upload to Azure"""
     print_banner()
     print("Starting Onei.lk fresh data pipeline...")
-    print(f"Pipeline started at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}")
+    print(
+        f"Pipeline started at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}"
+    )
 
     try:
         # Setup logging

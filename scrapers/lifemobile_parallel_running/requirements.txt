@@ -1,0 +1,15 @@
+# LifeMobile Scraper - Required Python Packages
+# Install these packages using: pip install -r requirements.txt
+
+# Core packages
+python-dotenv>=1.0.0
+azure-storage-blob>=12.14.0
+
+# Data processing (if needed for CSV export)
+pandas>=1.5.0
+
+# Logging and utilities (usually built-in, but included for completeness)
+typing-extensions>=4.0.0
+
+# Optional: For enhanced JSON processing
+ujson>=5.0.0

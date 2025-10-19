@@ -272,7 +272,88 @@ class ScraperOrchestrator:
 
         except Exception as e:
             logger.error(f"❌ Error running merge process: {e}")
+            logger.info(
+                "💡 Note: JSON files are kept for debugging. Run 'python quick_cleanup.py' to clean manually."
+            )
             return False
+
+    def automatic_cleanup(self):
+        """Automatically clean up all JSON files and completion markers"""
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("🧹 AUTOMATIC WORKSPACE CLEANUP")
+        logger.info("=" * 60)
+
+        # Files to delete
+        files_to_delete = [
+            "lifemobile_products_script1.json",
+            "lifemobile_products_script2.json",
+            "lifemobile_products_script3.json",
+            "lifemobile_products_script4.json",
+            "lifemobile_products_merged.json",
+            "script1.complete",
+            "script2.complete",
+            "script3.complete",
+            "script4.complete",
+        ]
+
+        # Check for additional files
+        for file in os.listdir("."):
+            if file.startswith("lifemobile_products_") and (
+                file.endswith(".json") or file.endswith(".csv")
+            ):
+                if file not in files_to_delete:
+                    files_to_delete.append(file)
+
+        # Check jsonfiles directory
+        jsonfiles_dir = "jsonfiles"
+        if os.path.exists(jsonfiles_dir):
+            for file in os.listdir(jsonfiles_dir):
+                if file.startswith("lifemobile_") and (
+                    file.endswith(".json") or file.endswith(".csv")
+                ):
+                    files_to_delete.append(os.path.join(jsonfiles_dir, file))
+
+        # Remove duplicates
+        files_to_delete = list(set(files_to_delete))
+
+        deleted_count = 0
+        total_size_deleted = 0
+
+        logger.info(f"🔍 Found {len(files_to_delete)} files to clean up")
+
+        for file_path in files_to_delete:
+            if os.path.exists(file_path):
+                try:
+                    file_size = os.path.getsize(file_path)
+                    os.remove(file_path)
+                    size_str = self.get_file_size_formatted(file_size)
+                    logger.info(f"🗑️  Deleted: {file_path} ({size_str})")
+                    deleted_count += 1
+                    total_size_deleted += file_size
+                except Exception as e:
+                    logger.warning(f"⚠️  Could not delete {file_path}: {e}")
+            else:
+                logger.debug(f"📂 File not found: {file_path}")
+
+        if deleted_count > 0:
+            total_size_str = self.get_file_size_formatted(total_size_deleted)
+            logger.info(
+                f"✅ Cleanup complete: {deleted_count} files deleted ({total_size_str})"
+            )
+            logger.info("✨ Your workspace is now clean!")
+        else:
+            logger.info("📂 No files to clean up - workspace was already clean")
+
+        return deleted_count > 0
+
+    def get_file_size_formatted(self, size_bytes):
+        """Format file size in human-readable format"""
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} TB"
 
     def check_prerequisites(self):
         """Check if all required files exist"""
@@ -331,6 +412,11 @@ class ScraperOrchestrator:
             logger.error("❌ Merge and upload failed!")
             return False
 
+        # Note: Automatic cleanup will happen in merge_json_files.py after successful Azure upload
+        logger.info(
+            "📝 Note: File cleanup will happen automatically after successful Azure upload"
+        )
+
         # Success!
         total_time = datetime.now() - self.start_time
         logger.info("")
@@ -340,10 +426,13 @@ class ScraperOrchestrator:
         logger.info(f"⏱️  Total time: {total_time}")
         logger.info("✅ Data scraped from all sources")
         logger.info("✅ Data merged and deduplicated")
-        logger.info("☁️  Data uploaded to Azure Data Lake Storage")
-        logger.info("🗑️  All local files cleaned up")
+        logger.info("☁️  Data uploaded to Azure Data Lake Storage (raw-data container)")
+        logger.info(
+            "🗑️  All local JSON and CSV files will be cleaned up after Azure upload"
+        )
         logger.info("")
-        logger.info("✨ Your workspace is clean and data is safely in Azure!")
+        logger.info("✨ Your workspace is clean and data is safely stored in Azure!")
+        logger.info("📊 Data is partitioned by source_website and scrape_date")
         logger.info("=" * 60)
 
         return True

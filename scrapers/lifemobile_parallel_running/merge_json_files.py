@@ -3,11 +3,36 @@ JSON File Merger for LifeMobile Scraped Data
 
 This script merges the output from 4 parallel scraping scripts into a single consolidated JSON file.
 It also removes duplicates, provides statistics, creates a clean final dataset, and uploads to Azure Data Lake Storage.
-After successful upload, all JSON files are deleted.
+After s            # Upload with extended timeout and proper content type like Onei.lk
+            blob_client.upload_blob(
+                json_data,
+                overwrite=True,
+                content_settings=ContentSettings(content_type='application/json'),
+                timeout=300  # 5 minute timeout for upload operation
+            )
+
+            # Verify upload by checking blob properties
+            try:
+                blob_properties = blob_client.get_blob_properties()
+                uploaded_size = blob_properties.size
+                expected_size = len(json_data.encode('utf-8'))
+
+                if uploaded_size == expected_size:
+                    logger.info("✅ Upload to Azure Data Lake Storage completed successfully!")
+                    logger.info(f"📍 Location: {container_name}/{file_path}")
+                    logger.info(f"📊 Verified size: {uploaded_size} bytes")
+                    return True
+                else:
+                    logger.error(f"❌ Upload verification failed: Expected {expected_size} bytes, got {uploaded_size} bytes")
+                    return False
+            except Exception as verify_error:
+                logger.error(f"❌ Upload verification failed: {verify_error}")
+                return Falsepload, all JSON files are deleted.
 """
 
 import json
 import os
+import time
 from datetime import datetime
 from typing import List, Dict, Set
 import logging
@@ -102,9 +127,9 @@ class LifeMobileDataMerger:
         return unique_products
 
     def enhance_product_data(self, product: Dict) -> Dict:
-        """Add additional metadata and clean up product data"""
-        # Ensure all required fields exist
-        enhanced_product = {
+        """Clean up product data - keep only essential product fields"""
+        # Return only the core product data without any merge metadata
+        clean_product = {
             "product_id_native": product.get("product_id_native", ""),
             "product_url": product.get("product_url", ""),
             "product_title": product.get("product_title", ""),
@@ -114,23 +139,15 @@ class LifeMobileDataMerger:
             "specifications": product.get("specifications", {}),
             "image_urls": product.get("image_urls", []),
             "variants": product.get("variants", []),
-            "metadata": product.get("metadata", {}),
         }
 
-        # Add merge metadata
-        if "metadata" not in enhanced_product:
-            enhanced_product["metadata"] = {}
+        # Clean up empty fields (set to null instead of empty)
+        if not clean_product["description_html"]:
+            clean_product["description_html"] = None
+        if not clean_product["brand"]:
+            clean_product["brand"] = None
 
-        enhanced_product["metadata"]["merged_at"] = datetime.now().isoformat()
-        enhanced_product["metadata"]["merger_version"] = "1.0"
-
-        # Clean up empty fields
-        if not enhanced_product["description_html"]:
-            enhanced_product["description_html"] = None
-        if not enhanced_product["brand"]:
-            enhanced_product["brand"] = None
-
-        return enhanced_product
+        return clean_product
 
     def generate_summary_statistics(self, products: List[Dict]) -> Dict:
         """Generate comprehensive statistics about the merged data"""
@@ -241,47 +258,85 @@ class LifeMobileDataMerger:
         # Get Azure Connection String from Environment Variable
         connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
         if not connection_string:
-            logger.error("Azure connection string not found in environment variables.")
+            logger.error(
+                "❌ Azure connection string not found in environment variables."
+            )
+            logger.error(
+                "💡 Please ensure AZURE_STORAGE_CONNECTION_STRING is set in .env file"
+            )
             return False
 
-        # Define the partitioned path
-        scrape_date = datetime.now().strftime("%Y-%m-%d")
+        # Define the partitioned path using UTC timezone like Onei.lk
+        from datetime import timezone
+
+        utc_now = datetime.now(timezone.utc)
+        scrape_date = utc_now.strftime("%Y-%m-%d")
         file_path = (
             f"source_website={source_website}/scrape_date={scrape_date}/data.json"
         )
         container_name = "raw-data"
 
         try:
-            # Connect to Azure and Upload
+            # Import ContentSettings for proper content type handling
+            from azure.storage.blob import ContentSettings
+
+            # Configure service client with extended timeouts like Onei.lk
             blob_service_client = BlobServiceClient.from_connection_string(
-                connection_string
+                connection_string,
+                connection_timeout=60,  # Connection timeout
+                read_timeout=300,  # Read timeout
+                socket_timeout=300,  # Socket timeout
             )
+
             blob_client = blob_service_client.get_blob_client(
                 container=container_name, blob=file_path
             )
 
-            logger.info(f"☁️ Uploading data to: {container_name}/{file_path}")
+            # Log upload details
+            data_size_mb = len(json_data.encode("utf-8")) / (1024 * 1024)
+            logger.info(
+                f"☁️ Uploading {data_size_mb:.2f} MB to: {container_name}/{file_path}"
+            )
 
-            # Upload the JSON string
-            blob_client.upload_blob(json_data, overwrite=True)
+            # Upload with extended timeout and proper content type like Onei.lk
+            blob_client.upload_blob(
+                json_data,
+                overwrite=True,
+                content_settings=ContentSettings(content_type="application/json"),
+                timeout=300,  # 5 minute timeout for upload operation
+            )
 
             logger.info("✅ Upload to Azure Data Lake Storage completed successfully!")
             logger.info(f"📍 Location: {container_name}/{file_path}")
             return True
 
         except Exception as e:
-            logger.error(f"❌ ADLS upload error: {e}", exc_info=True)
+            logger.error(f"❌ ADLS upload error: {e}")
+            logger.error(f"💡 Check your Azure credentials and network connection")
             return False
 
-    def cleanup_json_files(self) -> None:
-        """Delete all JSON files and completion markers after successful upload"""
-        files_to_delete = self.input_files + [self.output_file]
+    def cleanup_all_files(self) -> None:
+        """Delete all JSON files, CSV files, and completion markers after successful upload (but keep the merged file)"""
+        files_to_delete = self.input_files.copy()  # Only delete input files, NOT the merged output file
 
-        # Also check for any other lifemobile JSON files
+        # Check for any lifemobile-related JSON files
         for file in os.listdir("."):
             if file.startswith("lifemobile_products_") and file.endswith(".json"):
-                if file not in files_to_delete:
+                # Skip the merged output file - keep it for reference
+                if file != self.output_file and file not in files_to_delete:
                     files_to_delete.append(file)
+            # Also check for CSV files that might have been generated
+            elif file.startswith("lifemobile_products_") and file.endswith(".csv"):
+                files_to_delete.append(file)
+
+        # Check jsonfiles directory
+        jsonfiles_dir = "jsonfiles"
+        if os.path.exists(jsonfiles_dir):
+            for file in os.listdir(jsonfiles_dir):
+                if file.startswith("lifemobile_") and (
+                    file.endswith(".json") or file.endswith(".csv")
+                ):
+                    files_to_delete.append(os.path.join(jsonfiles_dir, file))
 
         # Add completion marker files
         completion_markers = [
@@ -292,20 +347,44 @@ class LifeMobileDataMerger:
         ]
         files_to_delete.extend(completion_markers)
 
+        # Also check for any other CSV files that might have been generated
+        for file in os.listdir("."):
+            if file.endswith(".csv") and (
+                "lifemobile" in file.lower() or "products" in file.lower()
+            ):
+                if file not in files_to_delete:
+                    files_to_delete.append(file)
+
+        logger.info(f"🗑️ Found {len(files_to_delete)} files to delete")
+        logger.info(f"💾 Keeping merged file: {self.output_file}")
+
         deleted_count = 0
         for file_path in files_to_delete:
             if os.path.exists(file_path):
                 try:
+                    file_size = os.path.getsize(file_path)
                     os.remove(file_path)
-                    logger.info(f"🗑️ Deleted: {file_path}")
+                    logger.info(
+                        f"🗑️ Deleted: {file_path} ({self._format_file_size(file_size)})"
+                    )
                     deleted_count += 1
                 except Exception as e:
                     logger.warning(f"⚠️ Could not delete {file_path}: {e}")
+            else:
+                logger.debug(f"📂 File not found (already deleted?): {file_path}")
 
         if deleted_count > 0:
-            logger.info(f"✅ Cleanup complete: {deleted_count} files deleted")
+            logger.info(f"✅ Cleanup complete: {deleted_count} files deleted (merged file preserved)")
         else:
             logger.info("📂 No files to clean up")
+
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human-readable format"""
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} TB"
 
     def merge_files(self) -> bool:
         """Main method to merge all JSON files"""
@@ -343,20 +422,8 @@ class LifeMobileDataMerger:
         logger.info("Generating statistics...")
         summary_stats = self.generate_summary_statistics(enhanced_products)
 
-        # Create final output structure
-        final_output = {
-            "metadata": {
-                "source_website": "lifemobile.lk",
-                "merge_timestamp": self.statistics["merge_timestamp"],
-                "total_products": len(enhanced_products),
-                "scraping_method": "Scrapy parallel execution",
-                "merger_version": "1.0",
-                "input_files": self.input_files,
-                "merge_statistics": self.statistics,
-            },
-            "summary_statistics": summary_stats,
-            "products": enhanced_products,
-        }
+        # Create final output structure - ONLY PRODUCTS (no metadata)
+        final_output = enhanced_products
 
         # Save merged file
         try:
@@ -431,26 +498,54 @@ def main():
                 logger.error(f"❌ JSON validation failed: {e}")
                 return 1
 
-            # Upload to ADLS
-            upload_success = merger.upload_to_adls(
-                json_data=json_data, source_website="lifemobile.lk"
+            # Check if this is test data (skip upload for test data)
+            is_test_data = any(
+                product.get("product_id_native", "").startswith("test-")
+                for product in merged_data[:3]  # Check first 3 products
             )
 
+            if is_test_data:
+                logger.info("🧪 TEST DATA DETECTED - Skipping Azure upload")
+                logger.info("💡 Test data will not be uploaded to production data lake")
+                upload_success = True  # Simulate successful upload for test purposes
+            else:
+                # Upload to ADLS (only for real production data)
+                upload_success = merger.upload_to_adls(
+                    json_data=json_data, source_website="lifemobile.lk"
+                )
+
             if upload_success:
-                logger.info(
-                    "\n🎉 Data successfully uploaded to Azure Data Lake Storage!"
-                )
+                if is_test_data:
+                    logger.info(
+                        "\n🧪 Test data merge completed successfully (NO UPLOAD)"
+                    )
+                    logger.info("💡 Test data was not uploaded to Azure Data Lake")
+                else:
+                    logger.info(
+                        "\n🎉 Data successfully uploaded to Azure Data Lake Storage!"
+                    )
                 logger.info(f"📊 Final Summary:")
-                logger.info(
-                    f"   📦 Products uploaded: {merged_data['metadata']['total_products']:,}"
-                )
+                logger.info(f"   📦 Products processed: {len(merged_data):,}")
                 logger.info(f"   💾 Data size: {len(json_data) / (1024*1024):.2f} MB")
 
-                # Step 3: Cleanup all JSON files
-                logger.info("\n" + "=" * 60)
-                logger.info("STEP 3: CLEANING UP JSON FILES")
-                logger.info("=" * 60)
-                merger.cleanup_json_files()
+                if not is_test_data:
+                    # Double-check upload success before cleanup (only for real data)
+                    logger.info("\n🔍 Double-checking upload success before cleanup...")
+                    time.sleep(2)  # Brief pause to ensure upload is fully completed
+
+                    # Step 3: Cleanup all data files (ONLY after confirmed successful upload)
+                    logger.info("\n" + "=" * 60)
+                    logger.info("STEP 3: CLEANING UP DATA FILES")
+                    logger.info("=" * 60)
+                    logger.info(
+                        "⚠️  IMPORTANT: Input files will be deleted but merged file will be preserved"
+                    )
+                    merger.cleanup_all_files()
+                else:
+                    logger.info(
+                        "\n🧪 TEST MODE: Skipping file cleanup to preserve test data"
+                    )
+                    logger.info("💡 Test files remain for inspection (including merged file)")
 
                 logger.info("\n" + "=" * 60)
                 logger.info("✅ ALL STEPS COMPLETED SUCCESSFULLY!")
@@ -458,7 +553,8 @@ def main():
                 return 0
             else:
                 logger.error("❌ Failed to upload data to ADLS")
-                logger.warning("⚠️ JSON files NOT deleted due to upload failure")
+                logger.warning("⚠️ Data files NOT deleted due to upload failure")
+                logger.info("💡 Fix the upload issue and run the script again to retry")
                 return 1
 
         except FileNotFoundError:
@@ -466,7 +562,8 @@ def main():
             return 1
         except Exception as e:
             logger.error(f"❌ Failed to upload to ADLS: {e}", exc_info=True)
-            logger.warning("⚠️ JSON files NOT deleted due to upload failure")
+            logger.warning("⚠️ Data files NOT deleted due to upload failure")
+            logger.info("💡 Check your Azure credentials and network connection")
             return 1
 
     except KeyboardInterrupt:

@@ -11,9 +11,13 @@ def main():
     
     # Replace this with your actual data loading code
     print("Loading data from data warehouse...")
-        
+    
+    # no nay products to categorize exit
     input_dataframe = get_uncategorized_products()
     print(f"Data loaded. Number of products to categorize: {len(input_dataframe)}")
+    if input_dataframe.empty:
+        print("No uncategorized products found. Exiting.")
+        return
 
     # Example 2: Run the prediction pipeline
     model_path = Path(__file__).resolve().parent / "models" / "ann_category_classifier.pth"  # keep path stable inside container

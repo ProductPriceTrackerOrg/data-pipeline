@@ -25,7 +25,7 @@ def main():
     
     # Step 1: Load trained model
     print("\nStep 1: Loading trained model...")
-    predictor = ModelPredictor(models_dir="GNN_training/models", model_name="personalized_gnn")
+    predictor = ModelPredictor(model_name="personalized_gnn")
     model, mappings = predictor.load_model(use_latest=True)
     
     # Step 2: Load fresh daily data

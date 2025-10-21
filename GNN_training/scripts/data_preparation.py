@@ -1,11 +1,20 @@
 """
 Data preparation utilities for GNN training and inference
 """
+import os
+from pathlib import Path
 import torch
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from torch_geometric.data import HeteroData
 from typing import Dict, Tuple
+
+# Force Hugging Face caches into a writable temp directory inside the container.
+_hf_cache_dir = Path(os.environ.get("HF_HOME", "/tmp/huggingface"))
+_hf_cache_dir.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("HF_HOME", str(_hf_cache_dir))
+os.environ.setdefault("TRANSFORMERS_CACHE", str(_hf_cache_dir))
+os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(_hf_cache_dir))
 
 class DataPreparator:
     def __init__(self):

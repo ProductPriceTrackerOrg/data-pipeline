@@ -3,12 +3,16 @@ Model loading and embedding generation for predictions
 """
 import torch
 import os
+from pathlib import Path
 from scripts.model_architecture import PersonalizedHeteroGNN
 from scripts.data_preparation import DataPreparator
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+
 class ModelPredictor:
-    def __init__(self, models_dir: str = "GNN_training/models", model_name: str = "personalized_gnn"):
-        self.models_dir = models_dir
+    def __init__(self, models_dir: str = None, model_name: str = "personalized_gnn"):
+        self.models_dir = str(BASE_DIR / "models") if models_dir is None else models_dir
         self.model_name = model_name
         self.model = None
         self.mappings = None

@@ -47,11 +47,11 @@ with DAG(
     #     bash_command="cd /opt/airflow/scrapers/lifeMobile && python -u main.py",
     # )
 
-    # # lifemobile scraper is currently down due to site issues scrapers\lifemobile_parallel_running\main.py
-    # scrape_lifemobile_task = BashOperator(
-    #     task_id="scrape_lifemobile",
-    #     bash_command="cd /opt/airflow/scrapers/lifemobile_parallel_running && python -u main.py",
-    # )
+    # lifemobile scraper is currently down due to site issues scrapers\lifemobile_parallel_running\main.py
+    scrape_lifemobile_task = BashOperator(
+        task_id="scrape_lifemobile",
+        bash_command="cd /opt/airflow/scrapers/lifemobile_parallel_running && python -u main.py",
+    )
 
     # # Task to run the CyberDeals scraper
     # scrape_cyberdeals_task = BashOperator(
@@ -132,23 +132,23 @@ with DAG(
     #     bash_command="cd /opt/airflow/GNN_training && python -u prediction_main.py",
     # )
 
-    # price forecasting  priceforecasting\main.py
-    price_forecasting_task = BashOperator(
-        task_id="price_forecasting",
-        bash_command="cd /opt/airflow/priceforecasting && python -u main.py",
-    )
+    # # price forecasting  priceforecasting\main.py
+    # price_forecasting_task = BashOperator(
+    #     task_id="price_forecasting",
+    #     bash_command="cd /opt/airflow/priceforecasting && python -u main.py",
+    # )
 
-    # anomaly detection  anomaly_detection\main.py
-    anomaly_detection_task = BashOperator(
-        task_id="anomaly_detection",
-        bash_command="cd /opt/airflow/anomaly_detection && python -u main.py",
-    )
+    # # anomaly detection  anomaly_detection\main.py
+    # anomaly_detection_task = BashOperator(
+    #     task_id="anomaly_detection",
+    #     bash_command="cd /opt/airflow/anomaly_detection && python -u main.py",
+    # )
 
-    # notification service notification_service\main.py
-    notification_service_task = BashOperator(
-        task_id="notification_service",
-        bash_command="cd /opt/airflow/notification_service && python -u main.py",
-    )
+    # # notification service notification_service\main.py
+    # notification_service_task = BashOperator(
+    #     task_id="notification_service",
+    #     bash_command="cd /opt/airflow/notification_service && python -u main.py",
+    # )
 
     
             
@@ -177,4 +177,4 @@ with DAG(
     #                                         transform_fact_product_price_task,
     #                                         ] >> end_task
 
-    start_task >> price_forecasting_task >> anomaly_detection_task >> notification_service_task
+    start_task >> scrape_lifemobile_task

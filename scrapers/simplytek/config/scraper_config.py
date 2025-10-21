@@ -1,7 +1,6 @@
-"""
-Configuration settings for SimplyTek scraper
-"""
+"""Configuration settings for SimplyTek scraper."""
 import os
+import tempfile
 from typing import Dict, List
 
 # Base configuration
@@ -53,22 +52,73 @@ DEFAULT_HEADERS = {
 
 # Output settings
 
-# Allow the output directory to be overridden via environment variable. This is useful
-# when the scraper runs inside Docker where the working directory may not be writable.
-_env_output_dir = (
-    os.environ.get("SIMPLYTEK_OUTPUT_DIR")
-    or os.environ.get("SCRAPER_OUTPUT_DIR")
-)
 
-# Default to the `scraped_data` folder that lives alongside the scraper package so we
-# maintain backwards compatibility for local runs. Using abspath avoids relying on the
-# process working directory which previously triggered permission errors when Airflow
-# executed the scraper from /opt/airflow.
-_default_output_dir = os.path.abspath(
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "scraped_data")
-)
+def _existing_parent(path: str) -> str:
+    """Return the closest existing directory in the path chain."""
+    current = os.path.abspath(path)
+    while not os.path.exists(current):
+        parent = os.path.dirname(current)
+        if not parent or parent == current:
+            return current
+        current = parent
+    return current
 
-OUTPUT_DIR = os.path.abspath(_env_output_dir or _default_output_dir)
+
+def _is_parent_writable(path: str) -> bool:
+    """Check whether the nearest existing parent directory is writable."""
+    existing = _existing_parent(path)
+    if not os.path.isdir(existing):
+        return False
+    return os.access(existing, os.W_OK)
+
+
+def _resolve_output_directory() -> str:
+    """Resolve a writable output directory with sensible fallbacks."""
+    repo_default = os.path.abspath(
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "scraped_data")
+    )
+
+    # Collect candidate directories ordered by preference
+    candidates = []
+
+    # Environment overrides
+    env_override = os.environ.get("SIMPLYTEK_OUTPUT_DIR") or os.environ.get("SCRAPER_OUTPUT_DIR")
+    if env_override:
+        candidates.append(env_override)
+
+    # Explicit scraper root override
+    scraper_root = os.environ.get("SCRAPER_OUTPUT_ROOT")
+    if scraper_root:
+        candidates.append(os.path.join(scraper_root, "simplytek"))
+
+    # Airflow-aware defaults
+    airflow_home = os.environ.get("AIRFLOW_HOME")
+    if airflow_home:
+        candidates.append(os.path.join(airflow_home, "store", "simplytek"))
+        candidates.append(os.path.join(airflow_home, "data", "simplytek"))
+
+    # Fallback to typical Airflow container store mount
+    candidates.append(os.path.join("/opt/airflow", "store", "simplytek"))
+
+    # Temporary directory fallback (always writable inside containers)
+    candidates.append(os.path.join(tempfile.gettempdir(), "simplytek_scraped_data"))
+
+    # Final fallback to repository-local directory for local development
+    candidates.append(repo_default)
+
+    # Return the first candidate whose parent is writable
+    for candidate in candidates:
+        if not candidate:
+            continue
+        absolute_candidate = os.path.abspath(candidate)
+        if _is_parent_writable(absolute_candidate):
+            return absolute_candidate
+
+    # As a last resort, return the repo default
+    return repo_default
+
+
+OUTPUT_DIR = _resolve_output_directory()
 OUTPUT_FILE = "simplytek_products.json"
 BACKUP_OUTPUT = True
 

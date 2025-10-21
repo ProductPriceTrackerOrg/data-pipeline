@@ -8,4 +8,6 @@ RUN chown airflow:0 /tmp/requirements.txt
 
 USER airflow
 
-RUN pip install --no-cache-dir --requirement /tmp/requirements.txt
+ENV PIP_DEFAULT_TIMEOUT=1200
+
+RUN pip install --no-cache-dir --timeout=1200 --retries 5 --requirement /tmp/requirements.txt

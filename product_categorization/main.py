@@ -1,5 +1,5 @@
 
-import os
+from pathlib import Path
 import pandas as pd
 from prediction_pipeline.pipeline import run_prediction_pipeline
 from big_query.data_store import update_categories_in_bigquery
@@ -16,9 +16,11 @@ def main():
     print(f"Data loaded. Number of products to categorize: {len(input_dataframe)}")
 
     # Example 2: Run the prediction pipeline
+    model_path = Path(__file__).resolve().parent / "models" / "ann_category_classifier.pth"  # keep path stable inside container
+
     results = run_prediction_pipeline(
         input_df=input_dataframe,
-        model_path='product_categorization/models/ann_category_classifier.pth'
+        model_path=str(model_path)
     )
 
     # product_categorization/models/ann_category_classifier.pth

@@ -8,6 +8,14 @@ import torch.nn as nn
 from sentence_transformers import SentenceTransformer
 import pickle
 import os
+from pathlib import Path
+
+# Use a writable cache folder inside the container to avoid permission errors.
+_hf_cache_dir = Path(os.environ.get("HF_HOME", "/tmp/huggingface"))
+_hf_cache_dir.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("HF_HOME", str(_hf_cache_dir))
+os.environ.setdefault("TRANSFORMERS_CACHE", str(_hf_cache_dir))
+os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(_hf_cache_dir))
 
 class ProductCategoryANN(nn.Module):
     """

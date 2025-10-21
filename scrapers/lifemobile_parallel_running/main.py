@@ -22,6 +22,7 @@ class ScraperOrchestrator:
     """Orchestrates parallel scraping, monitoring, and data processing"""
 
     def __init__(self):
+        self.base_dir = Path(__file__).resolve().parent
         self.scripts = [
             {
                 "name": "Script 1",
@@ -57,31 +58,33 @@ class ScraperOrchestrator:
             },
         ]
         self.start_time = None
+        self.merge_script = self.base_dir / "merge_json_files.py"
 
     def cleanup_old_files(self):
         """Delete old JSON files and completion markers"""
         logger.info("🧹 Cleaning up old files...")
 
         files_to_delete = [
-            "lifemobile_products_script1.json",
-            "lifemobile_products_script2.json",
-            "lifemobile_products_script3.json",
-            "lifemobile_products_script4.json",
-            "lifemobile_products_merged.json",
-            "script1.complete",
-            "script2.complete",
-            "script3.complete",
-            "script4.complete",
+            self.base_dir / "lifemobile_products_script1.json",
+            self.base_dir / "lifemobile_products_script2.json",
+            self.base_dir / "lifemobile_products_script3.json",
+            self.base_dir / "lifemobile_products_script4.json",
+            self.base_dir / "lifemobile_products_merged.json",
+            self.base_dir / "script1.complete",
+            self.base_dir / "script2.complete",
+            self.base_dir / "script3.complete",
+            self.base_dir / "script4.complete",
         ]
 
         deleted_count = 0
-        for file in files_to_delete:
-            if os.path.exists(file):
+        for file_path in files_to_delete:
+            if file_path.exists():
                 try:
-                    os.remove(file)
+                    file_path.unlink()
                     deleted_count += 1
                 except Exception as e:
-                    logger.warning(f"Could not delete {file}: {e}")
+                    rel_path = file_path.relative_to(self.base_dir)
+                    logger.warning(f"Could not delete {rel_path}: {e}")
 
         if deleted_count > 0:
             logger.info(f"✅ Cleaned up {deleted_count} old files")
@@ -101,9 +104,11 @@ class ScraperOrchestrator:
             logger.info(f"Starting {script['name']} ({script['description']})...")
 
             try:
+                script_path = self.base_dir / script["file"]
                 # Start process in separate visible console window
                 process = subprocess.Popen(
-                    [sys.executable, script["file"]],
+                    [sys.executable, str(script_path)],
+                    cwd=self.base_dir,
                     creationflags=(
                         subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0
                     ),
@@ -124,14 +129,17 @@ class ScraperOrchestrator:
 
     def get_script_status(self, script):
         """Get current status of a script"""
+        completion_marker = self.base_dir / script["completion_marker"]
+        json_file = self.base_dir / script["json_file"]
+
         # Check completion marker first
-        if os.path.exists(script["completion_marker"]):
-            size = self.get_file_size(script["json_file"])
+        if completion_marker.exists():
+            size = self.get_file_size(json_file)
             return "COMPLETED", size
 
         # Check if JSON file exists (script is running)
-        if os.path.exists(script["json_file"]):
-            size = self.get_file_size(script["json_file"])
+        if json_file.exists():
+            size = self.get_file_size(json_file)
             return "RUNNING", size
 
         # Check if process is still alive
@@ -146,10 +154,12 @@ class ScraperOrchestrator:
 
     def get_file_size(self, filename):
         """Get file size in human-readable format"""
-        if not os.path.exists(filename):
+        path = filename if isinstance(filename, Path) else Path(filename)
+
+        if not path.exists():
             return "0 B"
 
-        size = os.path.getsize(filename)
+        size = path.stat().st_size
         for unit in ["B", "KB", "MB", "GB"]:
             if size < 1024.0:
                 return f"{size:.1f} {unit}"
@@ -254,7 +264,10 @@ class ScraperOrchestrator:
             # Run merge_json_files.py
             logger.info("Running merge_json_files.py...")
             result = subprocess.run(
-                [sys.executable, "merge_json_files.py"], capture_output=True, text=True
+                [sys.executable, str(self.merge_script)],
+                cwd=self.base_dir,
+                capture_output=True,
+                text=True,
             )
 
             # Print output
@@ -285,56 +298,53 @@ class ScraperOrchestrator:
         logger.info("=" * 60)
 
         # Files to delete
-        files_to_delete = [
-            "lifemobile_products_script1.json",
-            "lifemobile_products_script2.json",
-            "lifemobile_products_script3.json",
-            "lifemobile_products_script4.json",
-            "lifemobile_products_merged.json",
-            "script1.complete",
-            "script2.complete",
-            "script3.complete",
-            "script4.complete",
-        ]
+        files_to_delete = {
+            self.base_dir / "lifemobile_products_script1.json",
+            self.base_dir / "lifemobile_products_script2.json",
+            self.base_dir / "lifemobile_products_script3.json",
+            self.base_dir / "lifemobile_products_script4.json",
+            self.base_dir / "lifemobile_products_merged.json",
+            self.base_dir / "script1.complete",
+            self.base_dir / "script2.complete",
+            self.base_dir / "script3.complete",
+            self.base_dir / "script4.complete",
+        }
 
         # Check for additional files
-        for file in os.listdir("."):
-            if file.startswith("lifemobile_products_") and (
-                file.endswith(".json") or file.endswith(".csv")
-            ):
-                if file not in files_to_delete:
-                    files_to_delete.append(file)
+        for file in self.base_dir.iterdir():
+            if file.is_file() and file.name.startswith("lifemobile_products_"):
+                if file.suffix in {".json", ".csv"}:
+                    files_to_delete.add(file)
 
         # Check jsonfiles directory
-        jsonfiles_dir = "jsonfiles"
-        if os.path.exists(jsonfiles_dir):
-            for file in os.listdir(jsonfiles_dir):
-                if file.startswith("lifemobile_") and (
-                    file.endswith(".json") or file.endswith(".csv")
-                ):
-                    files_to_delete.append(os.path.join(jsonfiles_dir, file))
-
-        # Remove duplicates
-        files_to_delete = list(set(files_to_delete))
+        jsonfiles_dir = self.base_dir / "jsonfiles"
+        if jsonfiles_dir.exists():
+            for file in jsonfiles_dir.iterdir():
+                if file.is_file() and file.name.startswith("lifemobile_"):
+                    if file.suffix in {".json", ".csv"}:
+                        files_to_delete.add(file)
 
         deleted_count = 0
         total_size_deleted = 0
 
         logger.info(f"🔍 Found {len(files_to_delete)} files to clean up")
 
-        for file_path in files_to_delete:
-            if os.path.exists(file_path):
+        for file_path in sorted(files_to_delete):
+            if file_path.exists():
                 try:
-                    file_size = os.path.getsize(file_path)
-                    os.remove(file_path)
+                    file_size = file_path.stat().st_size
+                    file_path.unlink()
                     size_str = self.get_file_size_formatted(file_size)
-                    logger.info(f"🗑️  Deleted: {file_path} ({size_str})")
+                    rel_path = file_path.relative_to(self.base_dir)
+                    logger.info(f"🗑️  Deleted: {rel_path} ({size_str})")
                     deleted_count += 1
                     total_size_deleted += file_size
                 except Exception as e:
-                    logger.warning(f"⚠️  Could not delete {file_path}: {e}")
+                    rel_path = file_path.relative_to(self.base_dir)
+                    logger.warning(f"⚠️  Could not delete {rel_path}: {e}")
             else:
-                logger.debug(f"📂 File not found: {file_path}")
+                rel_path = file_path.relative_to(self.base_dir)
+                logger.debug(f"📂 File not found: {rel_path}")
 
         if deleted_count > 0:
             total_size_str = self.get_file_size_formatted(total_size_deleted)
@@ -358,22 +368,19 @@ class ScraperOrchestrator:
     def check_prerequisites(self):
         """Check if all required files exist"""
         required_files = [
-            "scripts/script1.py",
-            "scripts/script2_accessories.py",
-            "scripts/script3_brands.py",
-            "scripts/script4_misc.py",
-            "merge_json_files.py",
-        ]
+            self.base_dir / script["file"] for script in self.scripts
+        ] + [self.merge_script]
 
-        missing_files = []
-        for file in required_files:
-            if not os.path.exists(file):
-                missing_files.append(file)
+        missing_files = [path for path in required_files if not path.exists()]
 
         if missing_files:
             logger.error("❌ Missing required files:")
-            for file in missing_files:
-                logger.error(f"   - {file}")
+            for file_path in missing_files:
+                try:
+                    rel_path = file_path.relative_to(self.base_dir)
+                except ValueError:
+                    rel_path = file_path
+                logger.error(f"   - {rel_path}")
             return False
 
         return True

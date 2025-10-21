@@ -47,6 +47,8 @@
 x-airflow-common:
   &airflow-common # In order to add custom dependencies the image is built locally from the Dockerfile.
   build: .
+  env_file:
+    - ${AIRFLOW_PROJ_DIR:-.}/.env
   image: ${AIRFLOW_IMAGE_NAME:-product-price-tracker/airflow:2.9.2-custom}
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -81,8 +83,14 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/store:/opt/airflow/store
     - ${AIRFLOW_PROJ_DIR:-.}/transformations:/opt/airflow/transformations
     - ${AIRFLOW_PROJ_DIR:-.}/product_categorization:/opt/airflow/product_categorization
+    - ${AIRFLOW_PROJ_DIR:-.}/product_matching:/opt/airflow/product_matching
+    - ${AIRFLOW_PROJ_DIR:-.}/priceforecasting:/opt/airflow/priceforecasting
     - ${AIRFLOW_PROJ_DIR:-.}/gcp-credentials.json:/opt/airflow/gcp-credentials.json:ro
     - ${AIRFLOW_PROJ_DIR:-.}/init_gcp_creds.py:/opt/airflow/init_gcp_creds.py
+    - ${AIRFLOW_PROJ_DIR:-.}/anomaly_detection:/opt/airflow/anomaly_detection
+    - ${AIRFLOW_PROJ_DIR:-.}/bigquery_schemas:/opt/airflow/bigquery_schemas
+    - ${AIRFLOW_PROJ_DIR:-.}/GNN_training:/opt/airflow/GNN_training
+    - ${AIRFLOW_PROJ_DIR:-.}/notification_service:/opt/airflow/notification_service
 
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on: &airflow-common-depends-on

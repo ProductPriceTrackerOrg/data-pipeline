@@ -8,6 +8,7 @@ import sys
 import logging
 from datetime import datetime
 import warnings
+from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler
 
 warnings.filterwarnings("ignore")
@@ -326,21 +327,56 @@ class ProductionPipeline:
                     import shutil
                     import os
 
-                    fine_tuned_path = "models/lstm_forecaster_finetuned.pth"
-                    original_path = "models/lstm_forecaster.pth"
+                    model_dir = Path(config.LSTM_MODEL_PATH).resolve().parent
+                    fine_tuned_path = model_dir / "lstm_forecaster_finetuned.pth"
+                    original_path = Path(config.LSTM_MODEL_PATH)
 
-                    if os.path.exists(fine_tuned_path):
-                        # Backup original model
-                        backup_path = "models/lstm_forecaster_backup.pth"
-                        if os.path.exists(original_path):
-                            shutil.copy2(original_path, backup_path)
-                            logger.info(f"Backed up original model to {backup_path}")
+                    if fine_tuned_path.exists():
+                        promotion_succeeded = False
+                        try:
+                            if original_path.exists():
+                                backup_path = model_dir / "lstm_forecaster_backup.pth"
+                                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                                try:
+                                    shutil.copy2(original_path, backup_path)
+                                except (PermissionError, OSError) as backup_err:
+                                    logger.warning(
+                                        "Failed to copy original model for backup (%s); attempting atomic replace",
+                                        backup_err,
+                                    )
+                                    temp_backup = backup_path.with_suffix(".tmp")
+                                    shutil.copyfile(original_path, temp_backup)
+                                    os.replace(temp_backup, backup_path)
+                                logger.info(f"Backed up original model to {backup_path}")
 
-                        # Replace original with fine-tuned model
-                        shutil.copy2(fine_tuned_path, original_path)
-                        logger.info(
-                            f"SUCCESS: Replaced original model with fine-tuned model"
-                        )
+                            try:
+                                shutil.copy2(fine_tuned_path, original_path)
+                                promotion_succeeded = True
+                            except (PermissionError, OSError) as copy_err:
+                                logger.warning(
+                                    "copy2 failed (%s); attempting atomic replace",
+                                    copy_err,
+                                )
+                                temp_path = original_path.with_suffix(".tmp")
+                                shutil.copyfile(fine_tuned_path, temp_path)
+                                os.replace(temp_path, original_path)
+                                promotion_succeeded = True
+                        except Exception as promote_err:
+                            logger.error(
+                                "Failed to promote fine-tuned model to %s: %s",
+                                original_path,
+                                promote_err,
+                            )
+
+                        if promotion_succeeded:
+                            logger.info(
+                                "SUCCESS: Replaced original model with fine-tuned model"
+                            )
+                        else:
+                            logger.warning(
+                                "Fine-tuned model remains at %s and will be used in-memory for this run",
+                                fine_tuned_path,
+                            )
                     else:
                         logger.warning(
                             "Fine-tuned model not found, using original model"

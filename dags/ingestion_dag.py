@@ -114,23 +114,23 @@ with DAG(
     #     bash_command="cd /opt/airflow/transformations/warehouse/facts && python -u fact_product_price.py",
     # )
 
-    # Task to categorize data
-    categorize_task = BashOperator(
-        task_id="categorize",
-        bash_command="cd /opt/airflow/product_categorization && python -u main.py",
-    )
+    # # Task to categorize data
+    # categorize_task = BashOperator(
+    #     task_id="categorize",
+    #     bash_command="cd /opt/airflow/product_categorization && python -u main.py",
+    # )
 
-    # Task to match products product_matching\daily_main.py
-    matching_task = BashOperator(
-        task_id="match_products",
-        bash_command="cd /opt/airflow/product_matching && python -u daily_main.py",
-    )
+    # # Task to match products product_matching\daily_main.py
+    # matching_task = BashOperator(
+    #     task_id="match_products",
+    #     bash_command="cd /opt/airflow/product_matching && python -u daily_main.py",
+    # )
 
-    # GNN prediction task GNN_training\prediction_main.py
-    gnn_prediction_task = BashOperator(
-        task_id="gnn_prediction",
-        bash_command="cd /opt/airflow/GNN_training && python -u prediction_main.py",
-    )
+    # # GNN prediction task GNN_training\prediction_main.py
+    # gnn_prediction_task = BashOperator(
+    #     task_id="gnn_prediction",
+    #     bash_command="cd /opt/airflow/GNN_training && python -u prediction_main.py",
+    # )
 
     # price forecasting  priceforecasting\main.py
     price_forecasting_task = BashOperator(
@@ -177,4 +177,4 @@ with DAG(
     #                                         transform_fact_product_price_task,
     #                                         ] >> end_task
 
-    start_task  >> matching_task >> gnn_prediction_task >> price_forecasting_task >> anomaly_detection_task >> notification_service_task
+    start_task >> price_forecasting_task >> anomaly_detection_task >> notification_service_task

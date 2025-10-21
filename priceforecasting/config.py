@@ -5,11 +5,15 @@ import torch
 
 # Resolve paths relative to this module so the pipeline works from any CWD
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
 
 # BigQuery Configuration
 PROJECT_ID = "price-pulse-470211"
 DATASET_ID = "warehouse"
-CREDENTIALS_PATH = "gcp-credentials.json"
+CREDENTIALS_PATH = os.environ.get(
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    os.path.join(PROJECT_ROOT, "gcp-credentials.json"),
+)  # default to repo-level file if env var missing
 
 # BigQuery Table Names
 TABLE_FACT_PRODUCT_PRICE = "FactProductPrice"
@@ -25,7 +29,7 @@ HIDDEN_SIZE = 128  # LSTM hidden units
 NUM_LAYERS = 2  # Number of LSTM layers
 BATCH_SIZE = 64  # Training batch size
 LEARNING_RATE = 0.001  # Learning rate for fine-tuning
-FINE_TUNE_EPOCHS =20  # Number of epochs for fine-tuning
+FINE_TUNE_EPOCHS = 1  # Number of epochs for fine-tuning
 
 # File Paths (ensure they resolve relative to the priceforecasting package)
 LSTM_MODEL_PATH = os.path.join(BASE_DIR, "models", "lstm_forecaster.pth")

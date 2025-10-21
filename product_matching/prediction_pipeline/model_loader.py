@@ -9,7 +9,16 @@ import faiss
 import numpy as np
 from typing import Optional, List, Tuple
 import logging
+import os
+from pathlib import Path
 from .config import *
+
+# Configure Hugging Face caches to live under /tmp to avoid permission issues in containers.
+_hf_cache_dir = Path(os.environ.get("HF_HOME", "/tmp/huggingface"))
+_hf_cache_dir.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("HF_HOME", str(_hf_cache_dir))
+os.environ.setdefault("TRANSFORMERS_CACHE", str(_hf_cache_dir))
+os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(_hf_cache_dir))
 
 logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)

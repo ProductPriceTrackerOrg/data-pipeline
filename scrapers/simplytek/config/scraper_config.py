@@ -52,7 +52,23 @@ DEFAULT_HEADERS = {
 }
 
 # Output settings
-OUTPUT_DIR = "scraped_data"
+
+# Allow the output directory to be overridden via environment variable. This is useful
+# when the scraper runs inside Docker where the working directory may not be writable.
+_env_output_dir = (
+    os.environ.get("SIMPLYTEK_OUTPUT_DIR")
+    or os.environ.get("SCRAPER_OUTPUT_DIR")
+)
+
+# Default to the `scraped_data` folder that lives alongside the scraper package so we
+# maintain backwards compatibility for local runs. Using abspath avoids relying on the
+# process working directory which previously triggered permission errors when Airflow
+# executed the scraper from /opt/airflow.
+_default_output_dir = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "scraped_data")
+)
+
+OUTPUT_DIR = os.path.abspath(_env_output_dir or _default_output_dir)
 OUTPUT_FILE = "simplytek_products.json"
 BACKUP_OUTPUT = True
 

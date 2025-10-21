@@ -170,8 +170,15 @@ class ScrapingSession:
 
 def ensure_output_directory(directory: str) -> None:
     """Ensure output directory exists"""
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    if not directory:
+        raise ValueError("directory path must be provided")
+
+    try:
+        os.makedirs(directory, exist_ok=True)
+    except PermissionError as exc:
+        raise PermissionError(f"Unable to create output directory '{directory}'") from exc
+    except OSError as exc:
+        raise OSError(f"Failed to create output directory '{directory}': {exc}") from exc
 
 
 def save_json_data(data: Any, filepath: str, indent: int = 2) -> bool:

@@ -363,6 +363,7 @@ def setup_scraping_environment():
     
     # Create output directory
     ensure_output_directory(OUTPUT_DIR)
+    logging.getLogger(__name__).info("Using output directory: %s", OUTPUT_DIR)
     
     # Check for Brotli support - website uses brotli compression
     logger = logging.getLogger(__name__)
